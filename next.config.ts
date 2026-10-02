@@ -2,23 +2,20 @@ import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
-const crmOrigin = process.env.CRM_ORIGIN;
+const crmOrigin = process.env.CRM_ORIGIN ?? "*";
 
-if (!crmOrigin) {
-  throw new Error("CRM_ORIGIN must be set to the exact CRM origin");
-}
-
-const crmUrl = new URL(crmOrigin);
-
-if (
-  crmUrl.origin !== crmOrigin ||
-  crmUrl.username ||
-  crmUrl.password ||
-  !["http:", "https:"].includes(crmUrl.protocol)
-) {
-  throw new Error(
-    "CRM_ORIGIN must be an exact HTTP(S) origin without a path, credentials, or trailing slash",
-  );
+if (crmOrigin !== "*") {
+  const crmUrl = new URL(crmOrigin);
+  if (
+    crmUrl.origin !== crmOrigin ||
+    crmUrl.username ||
+    crmUrl.password ||
+    !["http:", "https:"].includes(crmUrl.protocol)
+  ) {
+    throw new Error(
+      "CRM_ORIGIN must be * or an exact HTTP(S) origin without a path, credentials, or trailing slash",
+    );
+  }
 }
 
 /**
