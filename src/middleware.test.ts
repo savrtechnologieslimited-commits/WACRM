@@ -16,25 +16,30 @@ let refreshedCookies: Array<{
   value: string;
   options: Record<string, unknown>;
 }> = [];
+let configuredCookieOptions: Record<string, unknown> | undefined;
 
 vi.mock("@supabase/ssr", () => ({
   createServerClient: (
     _url: string,
     _key: string,
     opts: {
+      cookieOptions: Record<string, unknown>;
       cookies: { setAll: (c: typeof refreshedCookies) => void };
     },
-  ) => ({
-    auth: {
-      // Mirrors real auth-js: an expired access token is transparently
-      // refreshed inside getUser(), which rotates the refresh token and
-      // pushes the new cookies through setAll() before resolving.
-      getUser: async () => {
-        if (refreshedCookies.length) opts.cookies.setAll(refreshedCookies);
-        return { data: { user: mockUser } };
+  ) => {
+    configuredCookieOptions = opts.cookieOptions;
+    return {
+      auth: {
+        // Mirrors real auth-js: an expired access token is transparently
+        // refreshed inside getUser(), which rotates the refresh token and
+        // pushes the new cookies through setAll() before resolving.
+        getUser: async () => {
+          if (refreshedCookies.length) opts.cookies.setAll(refreshedCookies);
+          return { data: { user: mockUser } };
+        },
       },
-    },
-  }),
+    };
+  },
 }));
 
 // Imported after the mock is registered.
@@ -45,6 +50,7 @@ beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
   mockUser = null;
   refreshedCookies = [];
+  configuredCookieOptions = undefined;
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -56,6 +62,16 @@ const ROTATED = {
 };
 
 describe("middleware — refreshed auth cookies survive redirects", () => {
+  it("configures partitioned cookies for embedded sessions", async () => {
+    await middleware(new NextRequest("https://app.test/dashboard"));
+
+    expect(configuredCookieOptions).toMatchObject({
+      sameSite: "none",
+      secure: true,
+      partitioned: true,
+    });
+  });
+
   it("carries the rotated token when redirecting a signed-in user off /login", async () => {
     mockUser = { id: "user-1" };
     refreshedCookies = [ROTATED];
