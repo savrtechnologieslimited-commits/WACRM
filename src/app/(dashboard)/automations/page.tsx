@@ -16,6 +16,7 @@ import {
   Users,
   PhoneCall,
   Loader2,
+  Plane,
 } from "lucide-react"
 
 import { createClient } from "@/lib/supabase/client"
@@ -41,21 +42,26 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
+import { getFlowTemplate } from "@/lib/flows/templates"
 import { triggerMeta, formatRelative, isKnownTrigger } from "@/lib/automations/trigger-meta"
 import { cn } from "@/lib/utils"
 
-const TEMPLATE_ORDER: TemplateSlug[] = [
+type QuickStartTemplateSlug = TemplateSlug | "travel_enquiry_whatsapp"
+
+const TEMPLATE_ORDER: QuickStartTemplateSlug[] = [
   "welcome_message",
   "out_of_office",
   "lead_qualifier",
   "follow_up_reminder",
+  "travel_enquiry_whatsapp",
 ]
 
-const TEMPLATE_ICON: Record<TemplateSlug, typeof Zap> = {
+const TEMPLATE_ICON: Record<QuickStartTemplateSlug, typeof Zap> = {
   welcome_message: MessageCircle,
   out_of_office: Clock,
   lead_qualifier: Users,
   follow_up_reminder: PhoneCall,
+  travel_enquiry_whatsapp: Plane,
 }
 
 export default function AutomationsPage() {
@@ -133,7 +139,25 @@ export default function AutomationsPage() {
     load()
   }
 
-  async function startFromTemplate(slug: TemplateSlug) {
+  async function startFromTemplate(slug: QuickStartTemplateSlug) {
+    if (slug === "travel_enquiry_whatsapp") {
+      try {
+        const res = await fetch("/api/flows", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ template_slug: slug }),
+        })
+        const body = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(body?.error ?? `Flow creation failed: ${res.status}`)
+        }
+        const json = body as { flow: { id: string } }
+        router.push(`/flows/${json.flow.id}`)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to create flow")
+      }
+      return
+    }
     router.push(`/automations/new?template=${slug}`)
   }
 
@@ -183,7 +207,11 @@ export default function AutomationsPage() {
           <h2 className="mb-3 text-sm font-semibold text-muted-foreground">{t("templatesTitle")}</h2>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             {TEMPLATE_ORDER.map((slug) => {
-              const t = AUTOMATION_TEMPLATES[slug]
+              const t =
+                slug === "travel_enquiry_whatsapp"
+                  ? getFlowTemplate(slug)
+                  : AUTOMATION_TEMPLATES[slug]
+              if (!t) return null
               const Icon = TEMPLATE_ICON[slug]
               return (
                 <button

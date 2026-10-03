@@ -40,17 +40,21 @@ export async function findExistingContact(
   db: SupabaseClient,
   accountId: string,
   phone: string,
+  channelPhoneNumberId?: string,
 ): Promise<ExistingContact | null> {
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
 
   const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
 
-  const { data, error } = await db
+  let query = db
     .from("contacts")
     .select("*")
-    .eq("account_id", accountId)
-    .like("phone", `%${suffix}`);
+    .eq("account_id", accountId);
+  if (channelPhoneNumberId) {
+    query = query.eq("channel_phone_number_id", channelPhoneNumberId);
+  }
+  const { data, error } = await query.like("phone", `%${suffix}`);
 
   if (error || !data) return null;
 

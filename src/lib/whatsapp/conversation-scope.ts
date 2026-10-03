@@ -31,10 +31,10 @@ export async function assertConversationInAccount(
   db: SupabaseClient,
   conversationId: string,
   accountId: string,
-): Promise<void> {
+): Promise<string | null> {
   const { data, error } = await db
     .from('conversations')
-    .select('id')
+    .select('id, channel_phone_number_id')
     .eq('id', conversationId)
     .eq('account_id', accountId)
     .maybeSingle()
@@ -44,4 +44,5 @@ export async function assertConversationInAccount(
   if (!data) {
     throw new Error('conversation not found for this account')
   }
+  return data.channel_phone_number_id;
 }

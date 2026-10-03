@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useCallback, useEffect, useRef } from "react";
+import { Suspense, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
@@ -13,6 +13,7 @@ import { useRealtime } from "@/hooks/use-realtime";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
+import { DemoInbox } from "@/components/inbox/demo-inbox";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,12 @@ function InboxPageInner() {
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
+  const [inboxNumbers, setInboxNumbers] = useState<
+    { id: string; label: string; isPrimary: boolean }[]
+  >([]);
+  const [selectedInboxNumberId, setSelectedInboxNumberId] = useState<
+    string | null
+  >(null);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -183,12 +190,12 @@ function InboxPageInner() {
 
       if (!user) return;
 
-      // whatsapp_config is one-row-per-account post-multi-user, so
+      // whatsapp_config may now have one row per connected number, so
       // the previous `.eq('user_id', user.id)` would miss the row
       // for any teammate who didn't personally save the config —
       // the "WhatsApp not connected" banner would show in the
       // shared inbox even though the admin had it configured.
-      // Resolve account_id via the profile and query by that.
+      // Resolve account_id via the profile and query all number rows.
       const { data: profile } = await supabase
         .from("profiles")
         .select("account_id")
@@ -200,13 +207,27 @@ function InboxPageInner() {
         return;
       }
 
-      const { data } = await supabase
+      const { data: configs, error: configError } = await supabase
         .from("whatsapp_config")
-        .select("status")
+        .select("status, phone_number_id, display_phone_number, is_primary")
         .eq("account_id", accountId)
-        .maybeSingle();
+        .order("is_primary", { ascending: false });
 
-      setWhatsappConnected(data?.status === "connected");
+      if (configError) {
+        console.error("Failed to load WhatsApp inbox numbers:", configError);
+        setWhatsappConnected(null);
+        return;
+      }
+
+      const rows = configs ?? [];
+      setInboxNumbers(
+        rows.map((row) => ({
+          id: row.phone_number_id,
+          label: row.display_phone_number || row.phone_number_id,
+          isPrimary: row.is_primary,
+        })),
+      );
+      setWhatsappConnected(rows.some((row) => row.status === "connected"));
     };
 
     checkConnection();
@@ -560,6 +581,20 @@ function InboxPageInner() {
   // it back to the list. On lg+ both panes render side-by-side as
   // before, unchanged.
   const hasActiveConv = !!activeConversation;
+  const visibleConversations = useMemo(
+    () =>
+      selectedInboxNumberId
+        ? conversations.filter(
+            (conversation) =>
+              conversation.channel_phone_number_id === selectedInboxNumberId,
+          )
+        : conversations,
+    [conversations, selectedInboxNumberId],
+  );
+
+  if (whatsappConnected === false && inboxNumbers.length === 0) {
+    return <DemoInbox />;
+  }
 
   return (
     <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
@@ -571,6 +606,50 @@ function InboxPageInner() {
           <p className="text-xs text-amber-400">
             {t("whatsappNotConnected")}
           </p>
+        </div>
+      )}
+
+      {inboxNumbers.length > 0 && (
+        <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-border px-3 py-2">
+          {inboxNumbers.length > 1 && (
+            <button
+              type="button"
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium",
+                selectedInboxNumberId === null
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setSelectedInboxNumberId(null)}
+            >
+              All inboxes
+            </button>
+          )}
+          {inboxNumbers.map((number) => (
+            <button
+              key={number.id}
+              type="button"
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-medium",
+                selectedInboxNumberId === number.id
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => {
+                setSelectedInboxNumberId(number.id);
+                if (
+                  activeConversation?.channel_phone_number_id !== number.id
+                ) {
+                  setActiveConversation(null);
+                  setActiveContact(null);
+                  setMessages([]);
+                }
+              }}
+            >
+              {number.label}
+              {number.isPrimary ? ' · Primary' : ''}
+            </button>
+          ))}
         </div>
       )}
 
@@ -587,7 +666,7 @@ function InboxPageInner() {
           <ConversationList
             activeConversationId={activeConversation?.id ?? null}
             onSelect={handleSelectConversation}
-            conversations={conversations}
+            conversations={visibleConversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
           />

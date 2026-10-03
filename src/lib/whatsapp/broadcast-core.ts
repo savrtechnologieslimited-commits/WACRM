@@ -50,6 +50,7 @@ export interface BroadcastRecipientInput {
 
 export interface CreateBroadcastParams {
   name?: string | null;
+  phoneNumberId?: string;
   templateName: string;
   templateLanguage?: string | null;
   recipients: BroadcastRecipientInput[];
@@ -87,7 +88,7 @@ export async function createBroadcast(
   auditUserId: string,
   params: CreateBroadcastParams
 ): Promise<BroadcastPlan> {
-  const { name, templateName, recipients } = params;
+  const { name, phoneNumberId, templateName, recipients } = params;
 
   if (!templateName) {
     throw new BroadcastError('bad_request', "'template_name' is required", 400);
@@ -109,11 +110,14 @@ export async function createBroadcast(
 
   // Config (fail fast + provides the audit trail owner already resolved
   // by the caller). Meta send needs phone_number_id + decrypted token.
-  const { data: config, error: configError } = await db
+  let configQuery = db
     .from('whatsapp_config')
     .select('*')
-    .eq('account_id', accountId)
-    .single();
+    .eq('account_id', accountId);
+  configQuery = phoneNumberId
+    ? configQuery.eq('phone_number_id', phoneNumberId)
+    : configQuery.eq('is_primary', true);
+  const { data: config, error: configError } = await configQuery.single();
   if (configError || !config) {
     throw new BroadcastError(
       'whatsapp_not_configured',
@@ -129,7 +133,8 @@ export async function createBroadcast(
     db,
     accountId,
     templateName,
-    params.templateLanguage
+    params.templateLanguage,
+    config.waba_id,
   );
   if (resolvedTemplate.malformed) {
     throw new BroadcastError(
@@ -156,6 +161,7 @@ export async function createBroadcast(
     }
     const { id } = await findOrCreateContact(db, accountId, auditUserId, {
       phone: to,
+      phoneNumberId: config.phone_number_id,
     });
     resolved.push({
       contactId: id,
@@ -209,6 +215,7 @@ export async function createBroadcast(
       p_name: name || `API broadcast (${templateName})`,
       p_template_name: templateName,
       p_template_language: resolvedTemplate.language,
+      p_phone_number_id: config.phone_number_id,
       p_total_recipients: deduped.length,
       p_contact_ids: deduped.map((r) => r.contactId),
       // Frozen per-recipient params (migration 038) — without them a

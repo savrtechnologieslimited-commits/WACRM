@@ -31,10 +31,21 @@ vi.mock("./admin-client", () => {
   }
 
   function builder(table: string) {
+    const filters: Array<{
+      column: string;
+      value: unknown;
+      kind: "eq" | "in";
+    }> = [];
     const b: Record<string, unknown> = {
       select: () => b,
-      eq: () => b,
-      in: () => b,
+      eq: (column: string, value: unknown) => {
+        filters.push({ column, value, kind: "eq" });
+        return b;
+      },
+      in: (column: string, value: unknown) => {
+        filters.push({ column, value, kind: "in" });
+        return b;
+      },
       filter: () => b,
       order: () => b,
       limit: () => b,
@@ -65,7 +76,19 @@ vi.mock("./admin-client", () => {
           error: null;
           count: number;
         }) => unknown,
-      ) => resolve({ data: rows(table), error: null, count: 0 }),
+      ) =>
+        resolve({
+          data: rows(table).filter((row) =>
+            filters.every((filter) => {
+              const value = (row as Record<string, unknown>)[filter.column];
+              return filter.kind === "in"
+                ? (filter.value as unknown[]).includes(value)
+                : value === filter.value;
+            }),
+          ),
+          error: null,
+          count: 0,
+        }),
     };
     return b;
   }
@@ -254,6 +277,37 @@ describe("dispatchInboundToFlows — entry triggers (#490)", () => {
     expect(result.consumed).toBe(true);
     expect(result.flow_run_id).toBe("run-1");
     expect(startedRuns()).toHaveLength(1);
+  });
+
+  it("does not restart a once-per-contact flow after completion or handoff", async () => {
+    h.state.flows = [
+      {
+        ...KEYWORD_FLOW,
+        trigger_config: {
+          keywords: ["hi"],
+          match_type: "exact",
+          once_per_contact: true,
+        },
+      },
+    ];
+    h.state.activeRuns = [
+      {
+        id: "prior-run",
+        account_id: "acct-1",
+        flow_id: "flow-1",
+        contact_id: "ct-1",
+        status: "completed",
+      },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "hi",
+      meta_message_id: "m2",
+    });
+
+    expect(result).toMatchObject({ consumed: true, outcome: "already_completed" });
+    expect(startedRuns()).toHaveLength(0);
   });
 
   it("leaves a non-matching tap for the automations dispatcher", async () => {

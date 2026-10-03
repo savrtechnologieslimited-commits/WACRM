@@ -16,6 +16,11 @@ import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
 import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 
+type NumberScopedTemplatePayload = TemplatePayload & {
+  phone_number_id?: string
+  waba_id?: string | null
+}
+
 /**
  * Shared upsert payload builder — both the Meta-failure path and the
  * Meta-success path write nearly identical rows; dropping the shared
@@ -24,7 +29,7 @@ import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 function buildUpsertRow(
   accountId: string,
   userId: string,
-  payload: TemplatePayload,
+  payload: NumberScopedTemplatePayload,
   extras: {
     status: 'DRAFT' | string
     metaTemplateId: string | null
@@ -40,6 +45,7 @@ function buildUpsertRow(
     // still on (user_id, name, language) — see the upsert helper
     // for the cross-teammate dedup follow-up.
     user_id: userId,
+    waba_id: payload.waba_id ?? null,
     name: payload.name,
     category: payload.category,
     language: payload.language,
@@ -65,16 +71,25 @@ async function upsertTemplateRow(
   supabase: SupabaseClient,
   row: ReturnType<typeof buildUpsertRow>,
 ) {
-  // TODO(account-sharing): conflict target is still scoped to
-  // user_id. Once a follow-up migration drops the legacy unique
-  // index on (user_id, name, language) and adds (account_id,
-  // name, language), switch `onConflict` here so two teammates
-  // can't shadow each other's same-named template.
-  return supabase
+  let lookup = supabase
     .from('message_templates')
-    .upsert(row, { onConflict: 'user_id,name,language' })
-    .select()
-    .single()
+    .select('id')
+    .eq('account_id', row.account_id)
+    .eq('name', row.name)
+    .eq('language', row.language);
+  lookup = row.waba_id
+    ? lookup.eq('waba_id', row.waba_id)
+    : lookup.is('waba_id', null);
+  const { data: existing, error: lookupError } = await lookup.maybeSingle();
+  if (lookupError) return { data: null, error: lookupError };
+  return existing
+    ? supabase
+        .from('message_templates')
+        .update(row)
+        .eq('id', existing.id)
+        .select()
+        .single()
+    : supabase.from('message_templates').insert(row).select().single();
 }
 
 /**
@@ -101,9 +116,9 @@ export async function POST(request: Request) {
     // local upsert was refused.
     const { supabase, accountId, userId } = await requireRole('admin')
 
-    let payload: TemplatePayload
+    let payload: NumberScopedTemplatePayload
     try {
-      payload = (await request.json()) as TemplatePayload
+      payload = (await request.json()) as NumberScopedTemplatePayload
     } catch {
       return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 })
     }
@@ -138,11 +153,14 @@ export async function POST(request: Request) {
       metaTemplateId = `dry-run-${crypto.randomUUID()}`
       metaStatus = 'PENDING'
     } else {
-      const { data: config, error: configError } = await supabase
+      let configQuery = supabase
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', accountId)
-        .single()
+      configQuery = payload.phone_number_id
+        ? configQuery.eq('phone_number_id', payload.phone_number_id)
+        : configQuery.eq('is_primary', true);
+      const { data: config, error: configError } = await configQuery.single()
       if (configError || !config) {
         return NextResponse.json(
           {
@@ -152,6 +170,7 @@ export async function POST(request: Request) {
           { status: 400 },
         )
       }
+      payload.waba_id = config.waba_id;
       if (!config.waba_id) {
         return NextResponse.json(
           {

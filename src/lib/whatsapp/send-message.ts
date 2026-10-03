@@ -255,11 +255,19 @@ export async function sendMessageToConversation(
   const sanitizedPhone = hasValidPhone ? sendTarget : '';
 
   // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
+  let configQuery = db
     .from('whatsapp_config')
     .select('*')
-    .eq('account_id', accountId)
-    .single();
+    .eq('account_id', accountId);
+  if (conversation.channel_phone_number_id) {
+    configQuery = configQuery.eq(
+      'phone_number_id',
+      conversation.channel_phone_number_id
+    );
+  } else {
+    configQuery = configQuery.eq('is_primary', true);
+  }
+  const { data: config, error: configError } = await configQuery.single();
 
   if (configError || !config) {
     throw new SendMessageError(
@@ -326,7 +334,8 @@ export async function sendMessageToConversation(
       db,
       accountId,
       templateName,
-      templateLanguage
+      templateLanguage,
+      config.waba_id,
     );
     if (resolved.malformed) {
       throw new SendMessageError(

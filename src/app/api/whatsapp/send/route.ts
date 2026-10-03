@@ -114,7 +114,7 @@ export async function POST(request: Request) {
       // caller can't open a conversation against someone else's contact.
       const { data: contactRow, error: contactErr } = await supabase
         .from('contacts')
-        .select('id')
+        .select('id, channel_phone_number_id')
         .eq('id', contact_id)
         .eq('account_id', accountId)
         .maybeSingle()
@@ -130,7 +130,8 @@ export async function POST(request: Request) {
         supabase,
         accountId,
         userId,
-        contact_id
+        contact_id,
+        contactRow.channel_phone_number_id,
       )
       if (!resolved) {
         return NextResponse.json(
@@ -203,13 +204,35 @@ async function findOrCreateConversation(
   accountId: string,
   userId: string,
   contactId: string,
+  phoneNumberId?: string | null,
 ): Promise<string | null> {
-  const { data: existing } = await supabase
+  let resolvedPhoneNumberId = phoneNumberId ?? null;
+  if (!resolvedPhoneNumberId) {
+    const { data: primaryConfig, error: configError } = await supabase
+      .from('whatsapp_config')
+      .select('phone_number_id')
+      .eq('account_id', accountId)
+      .eq('is_primary', true)
+      .maybeSingle();
+    if (configError) {
+      console.error('Error resolving primary WhatsApp number:', configError);
+      return null;
+    }
+    resolvedPhoneNumberId = primaryConfig?.phone_number_id ?? null;
+  }
+
+  let conversationQuery = supabase
     .from('conversations')
     .select('id')
     .eq('account_id', accountId)
-    .eq('contact_id', contactId)
-    .maybeSingle()
+    .eq('contact_id', contactId);
+  if (resolvedPhoneNumberId) {
+    conversationQuery = conversationQuery.eq(
+      'channel_phone_number_id',
+      resolvedPhoneNumberId,
+    );
+  }
+  const { data: existing } = await conversationQuery.maybeSingle();
 
   if (existing) return existing.id
 
@@ -219,6 +242,9 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: userId,
       contact_id: contactId,
+      ...(resolvedPhoneNumberId
+        ? { channel_phone_number_id: resolvedPhoneNumberId }
+        : {}),
     })
     .select('id')
     .single()

@@ -132,7 +132,11 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
 
   // Same for the conversation the message lands in — see
   // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
-  await assertConversationInAccount(db, input.conversationId, input.accountId)
+  const conversationPhoneNumberId = await assertConversationInAccount(
+    db,
+    input.conversationId,
+    input.accountId,
+  )
 
   // Phone number, or the business-scoped user ID when Meta has never
   // given us a number for this customer (issue #519).
@@ -144,11 +148,14 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   }
   const sanitized = sendTarget.target
 
-  const { data: config, error: configErr } = await db
+  let configQuery = db
     .from('whatsapp_config')
     .select('*')
-    .eq('account_id', input.accountId)
-    .single()
+    .eq('account_id', input.accountId);
+  configQuery = conversationPhoneNumberId
+    ? configQuery.eq('phone_number_id', conversationPhoneNumberId)
+    : configQuery.eq('is_primary', true);
+  const { data: config, error: configErr } = await configQuery.single();
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')
   }
@@ -167,6 +174,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
             input.accountId,
             input.templateName,
             input.language,
+            config.waba_id,
           )
         ).row
       : null

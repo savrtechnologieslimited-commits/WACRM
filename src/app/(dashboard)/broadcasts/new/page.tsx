@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -13,6 +13,10 @@ import { Step4ScheduleSend } from '@/components/broadcasts/step4-schedule-send';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
 import { Check } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import {
+  DEMO_WHATSAPP_NUMBERS,
+  isDemoWhatsAppNumber,
+} from '@/lib/whatsapp/demo-data';
 
 const steps = [
   { label: 'template', key: 'template' },
@@ -26,6 +30,13 @@ export default function NewBroadcastPage() {
   const t = useTranslations('Broadcasts.new');
   const { accountId } = useAuth();
   const { createAndSendBroadcast, isProcessing, progress } = useBroadcastSending();
+  const [phoneNumbers, setPhoneNumbers] = useState<
+    { id: string; label: string; isPrimary: boolean; wabaId: string | null }[]
+  >([]);
+  const [phoneNumberId, setPhoneNumberId] = useState('');
+  const [loadingPhoneNumbers, setLoadingPhoneNumbers] = useState(true);
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoResult, setDemoResult] = useState<string | null>(null);
 
   const [currentStep, setCurrentStep] = useState(0);
   const [template, setTemplate] = useState<MessageTemplate | null>(null);
@@ -46,12 +57,71 @@ export default function NewBroadcastPage() {
   const [headerMediaUrl, setHeaderMediaUrl] = useState('');
   const [name, setName] = useState('');
 
+  useEffect(() => {
+    if (!accountId) return;
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await createClient()
+        .from('whatsapp_config')
+        .select('phone_number_id, display_phone_number, is_primary, waba_id')
+        .eq('account_id', accountId)
+        .order('is_primary', { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        toast.error(`Failed to load WhatsApp numbers: ${error.message}`);
+      } else {
+        const rows = (data ?? []).map((row) => ({
+          id: row.phone_number_id,
+          label: row.display_phone_number || row.phone_number_id,
+          isPrimary: row.is_primary,
+          wabaId: row.waba_id,
+        }));
+        const usingDemoNumbers = rows.length === 0;
+        setDemoMode(usingDemoNumbers);
+        setPhoneNumbers(
+          usingDemoNumbers
+            ? DEMO_WHATSAPP_NUMBERS.map((number) => ({ ...number }))
+            : rows,
+        );
+        setPhoneNumberId(
+          (rows.find((row) => row.isPrimary) ??
+            (usingDemoNumbers ? DEMO_WHATSAPP_NUMBERS[0] : rows[0]))?.id ?? '',
+        );
+      }
+      setLoadingPhoneNumbers(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accountId]);
+
   async function handleSend() {
     if (!template) return;
+    if (!phoneNumberId) {
+      toast.error('Connect a WhatsApp number before sending a broadcast.');
+      return;
+    }
+    if (demoMode && isDemoWhatsAppNumber(phoneNumberId)) {
+      const recipientCount =
+        audience.type === 'csv'
+          ? (audience.csvContacts?.length ?? 0)
+          : audience.type === 'tags'
+            ? Math.min(3, (audience.tagIds?.length ?? 0) * 2)
+            : audience.type === 'custom_field'
+              ? 2
+              : 3;
+      setDemoResult(
+        `Demo complete: simulated ${recipientCount} message${recipientCount === 1 ? '' : 's'} from ${phoneNumbers.find((number) => number.id === phoneNumberId)?.label}. No WhatsApp messages were sent.`,
+      );
+      toast.success('Demo broadcast completed. No messages were sent.');
+      return;
+    }
 
     try {
+      setDemoResult(null);
       const broadcastId = await createAndSendBroadcast({
         name,
+        phoneNumberId,
         template,
         audience: {
           type: audience.type,
@@ -87,6 +157,17 @@ export default function NewBroadcastPage() {
       toast.error(t('toastGiveName'));
       return;
     }
+    if (!phoneNumberId) {
+      toast.error('Connect a WhatsApp number before saving a broadcast.');
+      return;
+    }
+    if (demoMode && isDemoWhatsAppNumber(phoneNumberId)) {
+      setDemoResult(
+        `Demo draft saved locally for ${phoneNumbers.find((number) => number.id === phoneNumberId)?.label}. Nothing was written to your account.`,
+      );
+      toast.success('Demo draft saved locally.');
+      return;
+    }
     const supabase = createClient();
     const {
       data: { session },
@@ -107,6 +188,7 @@ export default function NewBroadcastPage() {
       name: name.trim(),
       template_name: template.name,
       template_language: template.language ?? 'en_US',
+      phone_number_id: phoneNumberId || null,
       template_variables: variables,
       audience_filter: {
         type: audience.type,
@@ -137,6 +219,53 @@ export default function NewBroadcastPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           {t('subtitle')}
         </p>
+        <div className="mt-4 max-w-sm space-y-2">
+          <label
+            htmlFor="broadcast-sender"
+            className="text-sm font-medium text-foreground"
+          >
+            Sending WhatsApp number
+          </label>
+          <select
+            id="broadcast-sender"
+            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            value={phoneNumberId}
+            onChange={(event) => {
+              setPhoneNumberId(event.target.value);
+              setTemplate(null);
+            }}
+            disabled={loadingPhoneNumbers || phoneNumbers.length === 0}
+          >
+            {phoneNumbers.length === 0 ? (
+              <option value="">
+                {loadingPhoneNumbers
+                  ? 'Loading WhatsApp numbers…'
+                  : 'No WhatsApp number connected'}
+              </option>
+            ) : (
+              phoneNumbers.map((number) => (
+                <option key={number.id} value={number.id}>
+                  {number.label}
+                  {number.isPrimary ? ' (primary)' : ''}
+                  {demoMode ? ' (demo)' : ''}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+        {demoMode && (
+          <p className="mt-3 max-w-xl rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+            Demo mode: sample senders, template, and audience are shown so you can try the broadcast flow. Sending and drafts are simulated locally; no Meta or database writes are made.
+          </p>
+        )}
+        {demoResult && (
+          <p
+            role="status"
+            className="mt-3 max-w-xl rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
+          >
+            {demoResult}
+          </p>
+        )}
       </div>
 
       {/* Step Indicator */}
@@ -191,9 +320,14 @@ export default function NewBroadcastPage() {
           {currentStep === 0 && (
             <Step1ChooseTemplate
               selectedTemplate={template}
+              wabaId={
+                phoneNumbers.find((number) => number.id === phoneNumberId)
+                  ?.wabaId ?? null
+              }
               onSelect={setTemplate}
               onNext={() => setCurrentStep(1)}
               onBack={() => router.push('/broadcasts')}
+              demoMode={demoMode}
             />
           )}
           {currentStep === 1 && (
@@ -202,6 +336,7 @@ export default function NewBroadcastPage() {
               onUpdate={setAudience}
               onNext={() => setCurrentStep(2)}
               onBack={() => setCurrentStep(0)}
+              demoMode={demoMode}
             />
           )}
           {currentStep === 2 && template && (
@@ -213,6 +348,7 @@ export default function NewBroadcastPage() {
               onHeaderMediaUrlChange={setHeaderMediaUrl}
               onNext={() => setCurrentStep(3)}
               onBack={() => setCurrentStep(1)}
+              demoMode={demoMode}
             />
           )}
           {currentStep === 3 && template && (
@@ -226,6 +362,7 @@ export default function NewBroadcastPage() {
               onBack={() => setCurrentStep(2)}
               isProcessing={isProcessing}
               progress={progress}
+              demoMode={demoMode}
             />
           )}
         </div>

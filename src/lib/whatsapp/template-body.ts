@@ -92,13 +92,18 @@ export async function resolveTemplateRow(
   db: SupabaseClient,
   accountId: string,
   templateName: string,
-  requestedLanguage?: string | null
+  requestedLanguage?: string | null,
+  wabaId?: string | null,
 ): Promise<ResolvedTemplate> {
-  const { data } = await db
+  let query = db
     .from('message_templates')
     .select('*')
     .eq('account_id', accountId)
     .eq('name', templateName);
+  if (wabaId !== undefined) {
+    query = wabaId ? query.eq('waba_id', wabaId) : query.is('waba_id', null);
+  }
+  const { data } = await query;
 
   // Sorted here rather than with `.order()` so the only query-builder
   // surface this helper depends on is select + eq — the same shape the

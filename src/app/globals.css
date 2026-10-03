@@ -39,6 +39,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-message-outgoing: var(--message-outgoing);
+  --color-message-outgoing-foreground: var(--message-outgoing-foreground);
   /* Secondary card surface (tile / hover backgrounds) and the accent
    * extras the Settings redesign leans on. The raw --primary-* vars
    * already exist per-accent below; these mappings expose them (and
@@ -60,9 +62,9 @@
 /* ============================================================
  * THEMING — two orthogonal dimensions
  *
- *   1. MODE   (light / dark)  → neutral surfaces. Selected with
+ *   1. MODE   (light / dark)  → WhatsApp-inspired surfaces. Selected with
  *      `document.documentElement.dataset.mode`. Defaults to dark.
- *   2. ACCENT (violet / …)    → the primary color only. Selected
+ *   2. ACCENT (WhatsApp green / …) → the primary color only. Selected
  *      with `document.documentElement.dataset.theme`.
  *
  * The two compose: any accent works in either mode. Neutral
@@ -72,7 +74,7 @@
  * --sidebar-ring) live in the ACCENT blocks. They set disjoint
  * variables, so cascade order between them doesn't matter.
  *
- * `:root` carries the dark-mode + violet defaults so a visitor
+ * `:root` carries the dark-mode + WhatsApp defaults so a visitor
  * renders correctly before JS runs; the boot script in
  * layout.tsx replays the saved mode + accent before first paint.
  *
@@ -88,77 +90,81 @@
 
 :root,
 html[data-mode="dark"] {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 260);
-  --card-2: oklch(0.205 0.01 260);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.01 260);
-  --popover-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0.01 260);
-  --muted-foreground: oklch(0.65 0.01 260);
-  --accent: oklch(0.22 0.01 260);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.16 0.018 225);
+  --foreground: oklch(0.94 0.008 210);
+  --card: oklch(0.21 0.018 225);
+  --card-2: oklch(0.24 0.018 225);
+  --card-foreground: oklch(0.94 0.008 210);
+  --popover: oklch(0.21 0.018 225);
+  --popover-foreground: oklch(0.94 0.008 210);
+  --secondary: oklch(0.27 0.018 225);
+  --secondary-foreground: oklch(0.94 0.008 210);
+  --muted: oklch(0.27 0.018 225);
+  --muted-foreground: oklch(0.68 0.018 215);
+  --accent: oklch(0.27 0.018 225);
+  --accent-foreground: oklch(0.94 0.008 210);
+  --message-outgoing: oklch(0.39 0.075 165);
+  --message-outgoing-foreground: oklch(0.95 0.008 180);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.28 0.01 260);
-  --input: oklch(0.28 0.01 260);
+  --border: oklch(0.34 0.018 225);
+  --input: oklch(0.34 0.018 225);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
   --radius: 0.625rem;
-  --sidebar: oklch(0.16 0.01 260);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.28 0.01 260);
+  --sidebar: oklch(0.19 0.018 225);
+  --sidebar-foreground: oklch(0.94 0.008 210);
+  --sidebar-accent: oklch(0.27 0.018 225);
+  --sidebar-accent-foreground: oklch(0.94 0.008 210);
+  --sidebar-border: oklch(0.34 0.018 225);
 }
 
 html[data-mode="light"] {
-  --background: oklch(0.99 0.002 260);
-  --foreground: oklch(0.21 0.01 260);
+  --background: oklch(0.965 0.006 230);
+  --foreground: oklch(0.22 0.018 225);
   --card: oklch(1 0 0);
   --card-2: oklch(0.985 0.002 260);
-  --card-foreground: oklch(0.21 0.01 260);
+  --card-foreground: oklch(0.22 0.018 225);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 260);
-  --secondary: oklch(0.967 0.003 260);
-  --secondary-foreground: oklch(0.25 0.01 260);
-  --muted: oklch(0.967 0.003 260);
-  --muted-foreground: oklch(0.52 0.015 260);
-  --accent: oklch(0.96 0.004 260);
-  --accent-foreground: oklch(0.25 0.01 260);
+  --popover-foreground: oklch(0.22 0.018 225);
+  --secondary: oklch(0.94 0.008 225);
+  --secondary-foreground: oklch(0.25 0.018 225);
+  --muted: oklch(0.94 0.008 225);
+  --muted-foreground: oklch(0.52 0.018 225);
+  --accent: oklch(0.92 0.012 225);
+  --accent-foreground: oklch(0.25 0.018 225);
+  --message-outgoing: oklch(0.94 0.045 145);
+  --message-outgoing-foreground: oklch(0.22 0.018 225);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0.004 260);
-  --input: oklch(0.922 0.004 260);
+  --border: oklch(0.88 0.012 225);
+  --input: oklch(0.88 0.012 225);
   --chart-2: oklch(0.6 0.1 260);
   --chart-3: oklch(0.7 0.06 260);
   --chart-4: oklch(0.8 0.04 260);
   --chart-5: oklch(0.87 0.03 260);
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.002 260);
-  --sidebar-foreground: oklch(0.21 0.01 260);
-  --sidebar-accent: oklch(0.96 0.004 260);
-  --sidebar-accent-foreground: oklch(0.25 0.01 260);
-  --sidebar-border: oklch(0.922 0.004 260);
+  --sidebar: oklch(0.985 0.003 225);
+  --sidebar-foreground: oklch(0.22 0.018 225);
+  --sidebar-accent: oklch(0.92 0.012 225);
+  --sidebar-accent-foreground: oklch(0.25 0.018 225);
+  --sidebar-border: oklch(0.88 0.012 225);
 }
 
 /* ---- ACCENT: primary color ---- */
 
 :root,
-html[data-theme="violet"] {
-  --primary: oklch(0.526 0.247 293);
-  --primary-foreground: oklch(0.985 0 0);
-  --primary-hover: oklch(0.6 0.22 293);
-  --primary-soft: oklch(0.526 0.247 293 / 0.12);
-  --primary-soft-2: oklch(0.526 0.247 293 / 0.2);
-  --ring: oklch(0.526 0.247 293);
-  --chart-1: oklch(0.526 0.247 293);
-  --sidebar-primary: oklch(0.526 0.247 293);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-ring: oklch(0.526 0.247 293);
+html[data-theme="whatsapp"] {
+  --primary: #25d366;
+  --primary-foreground: oklch(0.16 0.02 150);
+  --primary-hover: #1ebe5d;
+  --primary-soft: rgb(37 211 102 / 14%);
+  --primary-soft-2: rgb(37 211 102 / 24%);
+  --ring: #25d366;
+  --chart-1: #25d366;
+  --sidebar-primary: #25d366;
+  --sidebar-primary-foreground: oklch(0.16 0.02 150);
+  --sidebar-ring: #25d366;
 }
 
 html[data-theme="emerald"] {
@@ -226,5 +232,10 @@ html[data-theme="rose"] {
   }
   html {
     @apply font-sans;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: transparent !important;
+    opacity: 0 !important;
   }
 }

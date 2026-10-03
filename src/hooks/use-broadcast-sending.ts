@@ -41,6 +41,7 @@ export type VariableMapping =
 
 interface BroadcastPayload {
   name: string;
+  phoneNumberId: string;
   template: MessageTemplate;
   audience: AudienceConfig;
   variables: Record<string, VariableMapping>;
@@ -162,7 +163,10 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
 
-  async function resolveAudience(audience: AudienceConfig): Promise<Contact[]> {
+  async function resolveAudience(
+    audience: AudienceConfig,
+    phoneNumberId: string,
+  ): Promise<Contact[]> {
     const supabase = createClient();
 
     let contacts: Contact[] = [];
@@ -198,7 +202,11 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     } else if (audience.type === 'custom_field' && audience.customField) {
       contacts = await resolveCustomFieldAudience(supabase, audience.customField);
     } else if (audience.type === 'csv' && audience.csvContacts) {
-      contacts = await upsertCsvContacts(supabase, audience.csvContacts);
+      contacts = await upsertCsvContacts(
+        supabase,
+        audience.csvContacts,
+        phoneNumberId,
+      );
     }
 
     // Apply exclude tags (works across all contact-derived audience
@@ -212,7 +220,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       contacts = contacts.filter((c) => !excludedIds.has(c.id));
     }
 
-    return contacts;
+    return contacts.filter(
+      (contact) => contact.channel_phone_number_id === phoneNumberId,
+    );
   }
 
   /**
@@ -232,6 +242,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
   async function upsertCsvContacts(
     supabase: ReturnType<typeof createClient>,
     csvRows: { phone: string; name?: string }[],
+    phoneNumberId: string,
   ): Promise<Contact[]> {
     if (csvRows.length === 0) return [];
 
@@ -266,6 +277,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       .from('contacts')
       .select('*')
       .eq('account_id', accountId)
+      .eq('channel_phone_number_id', phoneNumberId)
       .in('phone_normalized', keys);
     if (lookupErr) {
       throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
@@ -285,6 +297,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       .map((row) => ({
         user_id: user.id,
         account_id: accountId,
+        channel_phone_number_id: phoneNumberId,
         phone: row.phone,
         name: row.name ?? null,
       }));
@@ -369,7 +382,10 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
 
       // ── Step 1: Resolve audience contacts ─────────────────────────
       setProgress(5);
-      const contacts = await resolveAudience(payload.audience);
+      const contacts = await resolveAudience(
+        payload.audience,
+        payload.phoneNumberId,
+      );
 
       if (contacts.length === 0) {
         throw new Error('No contacts found for this audience.');
@@ -382,6 +398,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         .insert({
           user_id: user.id,
           account_id: accountId,
+          phone_number_id: payload.phoneNumberId,
           name: payload.name,
           template_name: payload.template.name,
           template_language: payload.template.language ?? 'en_US',
@@ -518,6 +535,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
                 recipients: apiRecipients,
                 template_name: payload.template.name,
                 template_language: payload.template.language ?? 'en_US',
+                phone_number_id: payload.phoneNumberId,
               }),
             });
 

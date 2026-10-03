@@ -41,6 +41,7 @@ interface Step2Props {
   onUpdate: (audience: AudienceConfig) => void;
   onNext: () => void;
   onBack: () => void;
+  demoMode?: boolean;
 }
 
 export function Step2SelectAudience({
@@ -48,6 +49,7 @@ export function Step2SelectAudience({
   onUpdate,
   onNext,
   onBack,
+  demoMode = false,
 }: Step2Props) {
   const t = useTranslations('Broadcasts.wizard');
 
@@ -108,6 +110,33 @@ export function Step2SelectAudience({
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
   useEffect(() => {
+    if (demoMode) {
+      let cancelled = false;
+      void Promise.resolve().then(() => {
+        if (cancelled) return;
+        setTags([
+          {
+            id: 'demo-tag-vip',
+            user_id: 'demo-user',
+            name: 'VIP',
+            color: '#25d366',
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+          {
+            id: 'demo-tag-new',
+            user_id: 'demo-user',
+            name: 'New customers',
+            color: '#38bdf8',
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        ]);
+        setLoadingTags(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     async function fetchTags() {
       setLoadingTags(true);
       try {
@@ -119,10 +148,30 @@ export function Step2SelectAudience({
       }
     }
     fetchTags();
-  }, []);
+  }, [demoMode]);
 
   // Lazy-load custom fields only when that audience type is active.
   useEffect(() => {
+    if (demoMode) {
+      let cancelled = false;
+      void Promise.resolve().then(() => {
+        if (cancelled) return;
+        setCustomFields([
+          {
+            id: 'demo-field-city',
+            account_id: 'demo-account',
+            user_id: 'demo-user',
+            field_name: 'City',
+            field_type: 'text',
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        ]);
+        setLoadingFields(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
     if (audience.type !== 'custom_field') return;
     async function fetchFields() {
       setLoadingFields(true);
@@ -138,10 +187,27 @@ export function Step2SelectAudience({
       }
     }
     fetchFields();
-  }, [audience.type]);
+  }, [audience.type, demoMode]);
 
   const fetchEstimatedCount = useCallback(async () => {
     setLoadingCount(true);
+    if (demoMode) {
+      const sampleCount =
+        audience.type === 'csv'
+          ? (audience.csvContacts?.length ?? 0)
+          : audience.type === 'tags'
+            ? (audience.tagIds?.length ?? 0) > 1
+              ? 3
+              : audience.tagIds?.length
+                ? 2
+                : 0
+            : audience.type === 'custom_field'
+              ? 2
+              : 3;
+      setEstimatedCount(sampleCount);
+      setLoadingCount(false);
+      return;
+    }
     try {
       const supabase = createClient();
 
@@ -220,10 +286,11 @@ export function Step2SelectAudience({
     audience.customField,
     audience.csvContacts,
     audience.excludeTagIds,
+    demoMode,
   ]);
 
   useEffect(() => {
-    fetchEstimatedCount();
+    void Promise.resolve().then(() => fetchEstimatedCount());
   }, [fetchEstimatedCount]);
 
   async function handleCsvChange(e: React.ChangeEvent<HTMLInputElement>) {

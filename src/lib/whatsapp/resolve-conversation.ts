@@ -60,8 +60,9 @@ export async function resolveConversationByPhone(
   // connected — the same error the send would raise anyway.
   const { data: config } = await db
     .from('whatsapp_config')
-    .select('id')
+    .select('id, phone_number_id')
     .eq('account_id', accountId)
+    .eq('is_primary', true)
     .maybeSingle();
   if (!config) {
     throw new SendMessageError(
@@ -91,7 +92,12 @@ export async function resolveConversationByPhone(
   let contactId: string;
   let contactCreated = false;
 
-  const existing = await findExistingContact(db, accountId, sanitized);
+  const existing = await findExistingContact(
+    db,
+    accountId,
+    sanitized,
+    config.phone_number_id,
+  );
   if (existing) {
     contactId = existing.id;
     if (name && name !== existing.name) {
@@ -106,6 +112,7 @@ export async function resolveConversationByPhone(
       .insert({
         account_id: accountId,
         user_id: ownerUserId,
+        channel_phone_number_id: config.phone_number_id,
         phone: sanitized,
         name: name || sanitized,
       })
@@ -116,7 +123,12 @@ export async function resolveConversationByPhone(
       // Lost a race against a concurrent inbound/API create — the
       // unique index (migration 022) rejected the duplicate. Re-resolve.
       if (isUniqueViolation(createErr)) {
-        const raced = await findExistingContact(db, accountId, sanitized);
+        const raced = await findExistingContact(
+          db,
+          accountId,
+          sanitized,
+          config.phone_number_id,
+        );
         if (raced) {
           contactId = raced.id;
         } else {
@@ -149,7 +161,8 @@ export async function resolveConversationByPhone(
     db,
     accountId,
     contactId,
-    ownerUserId
+    ownerUserId,
+    config.phone_number_id
   );
 
   return { conversationId, contactId, contactCreated };
@@ -165,13 +178,15 @@ async function findOrCreateConversationRow(
   db: SupabaseClient,
   accountId: string,
   contactId: string,
-  ownerUserId: string
+  ownerUserId: string,
+  phoneNumberId: string
 ): Promise<string> {
   const { data: existing, error: findErr } = await db
     .from('conversations')
     .select('id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('channel_phone_number_id', phoneNumberId)
     .order('created_at', { ascending: true })
     .limit(1);
 
@@ -190,6 +205,7 @@ async function findOrCreateConversationRow(
       account_id: accountId,
       user_id: ownerUserId,
       contact_id: contactId,
+      channel_phone_number_id: phoneNumberId,
     })
     .select('id')
     .single();
@@ -201,6 +217,7 @@ async function findOrCreateConversationRow(
         .select('id')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
+        .eq('channel_phone_number_id', phoneNumberId)
         .order('created_at', { ascending: true })
         .limit(1);
       if (raced && raced.length > 0) {

@@ -41,12 +41,30 @@ import { supabaseAdmin } from './admin-client'
 export async function loadAccountMetaCredentials(
   db: ReturnType<typeof supabaseAdmin>,
   accountId: string,
+  conversationId?: string,
 ): Promise<{ phoneNumberId: string; accessToken: string }> {
-  const { data: config, error: configErr } = await db
+  let phoneNumberId: string | null = null;
+  if (conversationId) {
+    const { data: conversation, error: conversationError } = await db
+      .from('conversations')
+      .select('channel_phone_number_id')
+      .eq('id', conversationId)
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (conversationError || !conversation) {
+      throw new Error('Conversation not found for this account');
+    }
+    phoneNumberId = conversation.channel_phone_number_id;
+  }
+
+  let configQuery = db
     .from('whatsapp_config')
     .select('phone_number_id, access_token')
-    .eq('account_id', accountId)
-    .single()
+    .eq('account_id', accountId);
+  configQuery = phoneNumberId
+    ? configQuery.eq('phone_number_id', phoneNumberId)
+    : configQuery.eq('is_primary', true);
+  const { data: config, error: configErr } = await configQuery.single();
   if (configErr || !config) {
     throw new Error('WhatsApp not configured for this account')
   }
@@ -118,6 +136,7 @@ export async function engineSendText(
   const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
     db,
     args.accountId,
+    args.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -232,6 +251,7 @@ export async function engineSendMedia(
   const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
     db,
     args.accountId,
+    args.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -388,6 +408,7 @@ async function sendInteractiveViaMeta(
   const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
     db,
     input.accountId,
+    input.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {

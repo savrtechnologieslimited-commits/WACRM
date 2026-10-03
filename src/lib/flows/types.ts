@@ -129,9 +129,14 @@ export interface CollectInputNodeConfig {
    * Reserved for v2. Accepted on the config but ignored by the v1.5
    * runner — captures any non-empty text.
    */
-  validation?: "any" | "email" | "phone" | "regex";
+  validation?: "any" | "email" | "phone" | "regex" | "number";
   /** Used only when `validation === 'regex'`. */
   regex?: string;
+  /** Inclusive numeric bounds for `validation === 'number'`. */
+  min_value?: number;
+  max_value?: number;
+  /** Sent when numeric input is invalid; the run remains on this node. */
+  invalid_input_message?: string;
   /** Node to advance to after capture. */
   next_node_key: string;
 }
@@ -207,6 +212,8 @@ export interface KeywordTriggerConfig {
   keywords: string[];
   match_type?: "exact" | "contains";
   case_sensitive?: boolean;
+  /** Do not start this flow again after it has completed or handed off for this contact. */
+  once_per_contact?: boolean;
 }
 
 // No knobs in v1 — the trigger has a single semantic. Kept as a type
@@ -358,6 +365,7 @@ export interface DispatchInboundResult {
     | "handed_off"
     | "fallback_fired"
     | "duplicate_inbound_ignored"
+    | "already_completed"
     | "no_match";
 }
 

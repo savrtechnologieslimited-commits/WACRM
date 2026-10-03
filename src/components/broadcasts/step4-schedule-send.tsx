@@ -33,6 +33,7 @@ interface Step4Props {
   onBack: () => void;
   isProcessing: boolean;
   progress: number;
+  demoMode?: boolean;
 }
 
 export function Step4ScheduleSend({
@@ -45,6 +46,7 @@ export function Step4ScheduleSend({
   onBack,
   isProcessing,
   progress,
+  demoMode = false,
 }: Step4Props) {
   const t = useTranslations('Broadcasts.wizard');
   const [showConfirm, setShowConfirm] = useState(false);
@@ -55,6 +57,20 @@ export function Step4ScheduleSend({
     async function calculateReach() {
       setLoadingReach(true);
       try {
+        if (demoMode) {
+          setEstimatedReach(
+            audience.type === 'csv'
+              ? (audience.csvContacts?.length ?? 0)
+              : audience.type === 'tags'
+                ? (audience.tagIds?.length ?? 0) > 1
+                  ? 3
+                  : audience.tagIds?.length
+                    ? 2
+                    : 0
+                : 3,
+          );
+          return;
+        }
         const supabase = createClient();
 
         if (audience.type === 'all') {
@@ -81,7 +97,7 @@ export function Step4ScheduleSend({
     }
 
     calculateReach();
-  }, [audience]);
+  }, [audience, demoMode]);
 
   const audienceLabel =
     audience.type === 'all'
@@ -99,6 +115,11 @@ export function Step4ScheduleSend({
         <p className="mt-1 text-sm text-muted-foreground">
           {t('scheduleSend.subtitle')}
         </p>
+        {demoMode && (
+          <p className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+            Demo mode: sending will show a simulated result and will not contact WhatsApp.
+          </p>
+        )}
       </div>
 
       {/* Broadcast Name */}

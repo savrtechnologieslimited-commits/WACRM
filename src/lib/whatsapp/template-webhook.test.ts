@@ -67,26 +67,26 @@ function makeSupabaseStub(
             updateCount > 1 && opts.retrySelectResult
               ? opts.retrySelectResult
               : selectResult;
-          return {
+          const query = {
             eq(column: string, value: unknown) {
-              entry.filter = { column, value };
-              return {
-                select() {
-                  return Promise.resolve(result);
-                },
-                then(
-                  onFulfilled: (
-                    v: { error: { message: string } | null },
-                  ) => unknown,
-                ) {
-                  // Allow `await supabase.update().eq()` (no .select()).
-                  return Promise.resolve({ error: result.error }).then(
-                    onFulfilled,
-                  );
-                },
-              };
+              entry.filter ??= { column, value };
+              return query;
+            },
+            select() {
+              return Promise.resolve(result);
+            },
+            then(
+              onFulfilled: (
+                v: { error: { message: string } | null },
+              ) => unknown,
+            ) {
+              // Allow `await supabase.update().eq()` (no .select()).
+              return Promise.resolve({ error: result.error }).then(
+                onFulfilled,
+              );
             },
           };
+          return query;
         },
       };
     },
@@ -233,7 +233,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
-  it('inserts a stub row for a 0-row status update when exactly one config matches the WABA', async () => {
+  it('inserts a stub row for a 0-row status update when one account matches the WABA', async () => {
     const { stub, calls } = makeSupabaseStub(
       { data: [], error: null },
       { configRows: [CONFIG] },
@@ -269,6 +269,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
       status: 'APPROVED',
       rejection_reason: null,
       submission_error: null,
+      waba_id: 'WABA-1',
     });
   });
 
@@ -321,7 +322,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
     const message = String(warn.mock.calls[0][0]);
     expect(message).toContain('WABA WABA-NOBODY');
     expect(message).toContain('557');
-    expect(message).toContain('no whatsapp_config rows');
+    expect(message).toContain('no accounts match that WABA id');
   });
 
   it('refuses to guess the tenant when several configs share the WABA id', async () => {
@@ -345,7 +346,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
       stub,
     );
     expect(calls.some((c) => c.insert)).toBe(false);
-    expect(String(warn.mock.calls[0][0])).toContain('2 whatsapp_config rows');
+    expect(String(warn.mock.calls[0][0])).toContain('2 accounts match that WABA id');
   });
 
   it('inserts a stub with quality_score (and no status) for a 0-row quality update', async () => {
@@ -377,6 +378,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
       language: 'en_US',
       body_text: '',
       quality_score: 'RED',
+      waba_id: 'WABA-1',
     });
     // `status` is deliberately absent — the column default applies.
     expect(calls[2].insert).not.toHaveProperty('status');

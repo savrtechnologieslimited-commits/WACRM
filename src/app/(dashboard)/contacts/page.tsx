@@ -103,6 +103,20 @@ export default function ContactsPage() {
   // earlier request resolve last and render stale rows.
   const fetchSeq = useRef(0);
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const url = new URL(window.location.href);
+      const contactId = url.searchParams.get('contact');
+      if (!contactId || !/^[0-9a-f-]{36}$/i.test(contactId)) return;
+
+      setDetailContactId(contactId);
+      setDetailOpen(true);
+      url.searchParams.delete('contact');
+      window.history.replaceState(window.history.state, '', url);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
   const fetchTags = useCallback(async () => {
     const { data } = await supabase.from('tags').select('*');
     if (data) {

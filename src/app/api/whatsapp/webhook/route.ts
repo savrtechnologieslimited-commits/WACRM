@@ -293,7 +293,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       // Handle status updates
       if (value.statuses) {
         for (const status of value.statuses) {
-          await handleStatusUpdate(status)
+          await handleStatusUpdate(status, value.metadata.phone_number_id)
         }
       }
 
@@ -355,6 +355,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // inserts that need it for NOT NULL FK compliance. Always
           // the admin who saved the WhatsApp config.
           config.user_id,
+          config.phone_number_id,
           decryptedAccessToken,
           // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
           // read before migration 039 lands would have it undefined,
@@ -414,7 +415,7 @@ async function handleStatusUpdate(status: {
   timestamp: string
   recipient_id: string
   errors?: MetaStatusError[]
-}) {
+}, phoneNumberId: string) {
   // Meta's reason for a failed send (#535). Only read on `failed`; a
   // later non-failed status for the same wamid leaves the error
   // columns alone rather than clearing them, so the reason survives.
@@ -445,13 +446,29 @@ async function handleStatusUpdate(status: {
     messageUpdate.error_title = failure.title
     messageUpdate.error_details = failure.details
   }
-  const { error: msgErr } = await supabaseAdmin()
-    .from('messages')
-    .update(messageUpdate)
-    .eq('message_id', status.id)
+  const { data: matchingMessages, error: messageLookupError } =
+    await supabaseAdmin()
+      .from('messages')
+      .select('id, conversation:conversations!inner(channel_phone_number_id)')
+      .eq('message_id', status.id)
+      .eq('conversation.channel_phone_number_id', phoneNumberId)
 
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
+  if (messageLookupError) {
+    console.error('Error resolving message status number:', messageLookupError)
+  }
+
+  const matchingMessageIds = (matchingMessages ?? []).map(
+    (message: { id: string }) => message.id,
+  );
+  if (!messageLookupError && matchingMessageIds.length > 0) {
+    const { error: msgErr } = await supabaseAdmin()
+      .from('messages')
+      .update(messageUpdate)
+      .in('id', matchingMessageIds);
+
+    if (msgErr) {
+      console.error('Error updating message status:', msgErr)
+    }
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -466,8 +483,9 @@ async function handleStatusUpdate(status: {
 
   const { data: recipient, error: recFetchErr } = await supabaseAdmin()
     .from('broadcast_recipients')
-    .select('id, status')
+    .select('id, status, broadcast:broadcasts!inner(phone_number_id)')
     .eq('whatsapp_message_id', status.id)
+    .eq('broadcast.phone_number_id', phoneNumberId)
     .maybeSingle()
 
   if (recFetchErr) {
@@ -661,6 +679,7 @@ async function processMessage(
   // (contacts, conversations). Always the admin who saved the
   // WhatsApp config; the choice is arbitrary post-017 but stable.
   configOwnerUserId: string,
+  phoneNumberId: string,
   accessToken: string,
   // Per-account opt-out for the inbound-media mirror (migration 039).
   // See parseMessageContent for what it turns off.
@@ -684,6 +703,7 @@ async function processMessage(
   const contactOutcome = await findOrCreateContact(
     accountId,
     configOwnerUserId,
+    phoneNumberId,
     identity
   )
   if (!contactOutcome) return
@@ -693,7 +713,8 @@ async function processMessage(
   const convResult = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
-    contactRecord.id
+    contactRecord.id,
+    phoneNumberId
   )
   if (!convResult) return
   const conversation = convResult.conversation
@@ -722,6 +743,7 @@ async function processMessage(
     await parseMessageContent(
       message,
       accessToken,
+      phoneNumberId,
       mirrorMedia ? { accountId } : null
     )
 
@@ -990,6 +1012,7 @@ async function processMessage(
 async function parseMessageContent(
   message: WhatsAppMessage,
   accessToken: string,
+  phoneNumberId: string,
   // Tenancy + opt-out for the media mirror. Null disables mirroring
   // entirely, which is what the account-level toggle does.
   mirror: { accountId: string } | null
@@ -1045,7 +1068,7 @@ async function parseMessageContent(
         if (mirrored) return mirrored
       }
 
-      return `/api/whatsapp/media/${mediaId}`
+      return `/api/whatsapp/media/${mediaId}?phone_number_id=${encodeURIComponent(phoneNumberId)}`
     } catch (error) {
       console.error(
         `Failed to verify media ${mediaId} with Meta:`,
@@ -1210,12 +1233,14 @@ interface ContactOutcome {
  */
 async function findContactByWaUserId(
   accountId: string,
-  waUserId: string
+  waUserId: string,
+  phoneNumberId: string
 ): Promise<ContactRow | null> {
   const { data, error } = await supabaseAdmin()
     .from('contacts')
     .select('*')
     .eq('account_id', accountId)
+    .eq('channel_phone_number_id', phoneNumberId)
     .eq('wa_user_id', waUserId)
     .maybeSingle()
 
@@ -1278,13 +1303,14 @@ function contactIdentityPatch(
 async function findOrCreateContact(
   accountId: string,
   configOwnerUserId: string,
+  phoneNumberId: string,
   identity: WaIdentity
 ): Promise<ContactOutcome | null> {
   // BSUID first when we have one. It's stable per (user, business
   // portfolio) and, unlike the phone number, Meta will keep sending it
   // — so it's the key that survives a customer adopting a username.
   let existingContact: ContactRow | null = identity.waUserId
-    ? await findContactByWaUserId(accountId, identity.waUserId)
+    ? await findContactByWaUserId(accountId, identity.waUserId, phoneNumberId)
     : null
 
   // Fall back to the phone. The shared helper pre-filters in SQL by the
@@ -1298,6 +1324,7 @@ async function findOrCreateContact(
       supabaseAdmin(),
       accountId,
       identity.phone,
+      phoneNumberId,
     )
   }
 
@@ -1340,6 +1367,7 @@ async function findOrCreateContact(
     .insert({
       account_id: accountId,
       user_id: configOwnerUserId,
+      channel_phone_number_id: phoneNumberId,
       phone: identity.phone,
       name: identityDisplayName(identity),
       wa_user_id: identity.waUserId,
@@ -1356,14 +1384,15 @@ async function findOrCreateContact(
     // Re-resolve the existing row instead of dropping the message.
     if (isUniqueViolation(createError)) {
       const raced = identity.waUserId
-        ? await findContactByWaUserId(accountId, identity.waUserId)
+        ? await findContactByWaUserId(accountId, identity.waUserId, phoneNumberId)
         : null
       if (raced) return { contact: raced, wasCreated: false }
       if (identity.phone) {
         const racedByPhone = await findExistingContact(
           supabaseAdmin(),
           accountId,
-          identity.phone
+          identity.phone,
+          phoneNumberId
         )
         if (racedByPhone) return { contact: racedByPhone, wasCreated: false }
       }
@@ -1379,6 +1408,7 @@ async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  phoneNumberId: string,
 ) {
   // Look for an existing conversation in this account, oldest-first.
   //
@@ -1398,6 +1428,7 @@ async function findOrCreateConversation(
     .select('*')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('channel_phone_number_id', phoneNumberId)
     .order('created_at', { ascending: true })
     .limit(1)
 
@@ -1418,6 +1449,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: configOwnerUserId,
       contact_id: contactId,
+      channel_phone_number_id: phoneNumberId,
     })
     .select()
     .single()
@@ -1433,6 +1465,7 @@ async function findOrCreateConversation(
         .select('*')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
+        .eq('channel_phone_number_id', phoneNumberId)
         .order('created_at', { ascending: true })
         .limit(1)
       if (raced && raced.length > 0) {

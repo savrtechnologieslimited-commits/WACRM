@@ -6,6 +6,7 @@ import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Loader2, FileText, ArrowRight } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { DEMO_BROADCAST_TEMPLATE } from '@/lib/whatsapp/demo-data';
 
 const categoryColors: Record<string, string> = {
   Marketing: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
@@ -15,29 +16,54 @@ const categoryColors: Record<string, string> = {
 
 interface Step1Props {
   selectedTemplate: MessageTemplate | null;
+  wabaId: string | null;
   onSelect: (template: MessageTemplate) => void;
   onNext: () => void;
   onBack: () => void;
+  demoMode?: boolean;
 }
 
-export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack }: Step1Props) {
+export function Step1ChooseTemplate({
+  selectedTemplate,
+  wabaId,
+  onSelect,
+  onNext,
+  onBack,
+  demoMode = false,
+}: Step1Props) {
   const t = useTranslations('Broadcasts.wizard');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (demoMode) {
+      let cancelled = false;
+      void Promise.resolve().then(() => {
+        if (cancelled) return;
+        setTemplates([DEMO_BROADCAST_TEMPLATE]);
+        setLoading(false);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     async function fetchTemplates() {
       try {
         const supabase = createClient();
         // Only APPROVED templates can be sent via Meta — anything else
         // would 400 at broadcast time. Hide them rather than letting
         // the user pick a template that will fail.
-        const { data, error: fetchError } = await supabase
+        let query = supabase
           .from('message_templates')
           .select('*')
           .eq('status', 'APPROVED')
           .order('created_at', { ascending: false });
+        query = wabaId
+          ? query.eq('waba_id', wabaId)
+          : query.is('waba_id', null);
+        const { data, error: fetchError } = await query;
 
         if (fetchError) throw fetchError;
         setTemplates(data ?? []);
@@ -49,7 +75,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
     }
 
     fetchTemplates();
-  }, []);
+  }, [demoMode, wabaId, t]);
 
   if (loading) {
     return (

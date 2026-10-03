@@ -94,12 +94,27 @@ export function ContactForm({
     }
     setCheckingDup(true);
     try {
-      const existing = await findExistingContact(supabase, accountId, value);
+      const { data: config, error } = await supabase
+        .from('whatsapp_config')
+        .select('phone_number_id')
+        .eq('account_id', accountId)
+        .eq('is_primary', true)
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      const existing = await findExistingContact(
+        supabase,
+        accountId,
+        value,
+        config?.phone_number_id,
+      );
       setDupMatch(
         existing
           ? { contact: existing, exact: isExactMatch(existing, value) }
           : null,
       );
+    } catch (error) {
+      console.error('Failed to check for duplicate contacts:', error);
+      toast.error(t('toastError'));
     } finally {
       setCheckingDup(false);
     }
@@ -151,6 +166,7 @@ export function ContactForm({
     }
 
     setSaving(true);
+    let channelPhoneNumberId: string | undefined;
 
     try {
       const {
@@ -175,11 +191,22 @@ export function ContactForm({
           .eq('id', contactId);
         if (error) throw error;
       } else {
+        const { data: config, error: configError } = await supabase
+          .from('whatsapp_config')
+          .select('phone_number_id')
+          .eq('account_id', accountId)
+          .eq('is_primary', true)
+          .maybeSingle();
+        if (configError) throw new Error(configError.message);
+        channelPhoneNumberId = config?.phone_number_id ?? undefined;
         const { data, error } = await supabase
           .from('contacts')
           .insert({
             user_id: user.id,
             account_id: accountId,
+            ...(channelPhoneNumberId
+              ? { channel_phone_number_id: channelPhoneNumberId }
+              : {}),
             name: name.trim() || null,
             phone: phone.trim(),
             email: email.trim() || null,
@@ -221,6 +248,7 @@ export function ContactForm({
             supabase,
             accountId,
             phone.trim(),
+            channelPhoneNumberId,
           );
           if (existing) setDupMatch({ contact: existing, exact: true });
         }

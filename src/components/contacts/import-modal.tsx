@@ -220,6 +220,15 @@ export function ImportModal({
       if (!accountId)
         throw new Error('Your profile is not linked to an account.');
 
+      const { data: primaryConfig, error: configError } = await supabase
+        .from('whatsapp_config')
+        .select('phone_number_id')
+        .eq('account_id', accountId)
+        .eq('is_primary', true)
+        .maybeSingle();
+      if (configError) throw new Error(configError.message);
+      const channelPhoneNumberId = primaryConfig?.phone_number_id;
+
       let imported = 0;
       let skipped = 0;
       let failed = 0;
@@ -239,10 +248,17 @@ export function ImportModal({
 
       // 2) Skip numbers already in this account. One read of the
       //    generated `phone_normalized` column (migration 022) → Set.
-      const { data: existingRows } = await supabase
+      let existingQuery = supabase
         .from('contacts')
         .select('phone_normalized')
         .eq('account_id', accountId);
+      if (channelPhoneNumberId) {
+        existingQuery = existingQuery.eq(
+          'channel_phone_number_id',
+          channelPhoneNumberId,
+        );
+      }
+      const { data: existingRows } = await existingQuery;
       const existing = new Set(
         (existingRows ?? [])
           .map(
@@ -285,6 +301,9 @@ export function ImportModal({
         const rows = chunk.map((row) => ({
           user_id: user.id,
           account_id: accountId,
+          ...(channelPhoneNumberId
+            ? { channel_phone_number_id: channelPhoneNumberId }
+            : {}),
           phone: row.phone,
           name: row.name || null,
           email: row.email || null,

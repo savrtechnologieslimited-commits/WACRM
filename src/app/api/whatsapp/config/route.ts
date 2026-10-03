@@ -96,7 +96,7 @@ function metaFailure(err: unknown, step: MetaConnectStep, ctx: MetaErrorContext)
  *   { connected: false, reason: 'meta_api_error',   message: '...',
  *     meta: { code, subcode, fbtrace_id, step, field, message } }
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const supabase = await createClient()
 
@@ -121,11 +121,17 @@ export async function GET() {
       )
     }
 
-    const { data: config, error: configError } = await supabase
+    const selectedPhoneNumberId = new URL(request.url).searchParams.get(
+      'phone_number_id',
+    );
+    let configQuery = supabase
       .from('whatsapp_config')
       .select('phone_number_id, waba_id, access_token, status')
-      .eq('account_id', accountId)
-      .maybeSingle()
+      .eq('account_id', accountId);
+    configQuery = selectedPhoneNumberId
+      ? configQuery.eq('phone_number_id', selectedPhoneNumberId)
+      : configQuery.eq('is_primary', true);
+    const { data: config, error: configError } = await configQuery.maybeSingle();
 
     if (configError) {
       console.error('Error fetching whatsapp_config:', configError)
@@ -267,7 +273,15 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { phone_number_id, waba_id, access_token, verify_token, pin } = body
+    const {
+      phone_number_id,
+      waba_id,
+      access_token,
+      verify_token,
+      pin,
+      config_id,
+      is_primary,
+    } = body
 
     if (!access_token || !phone_number_id) {
       return NextResponse.json(
@@ -315,9 +329,9 @@ export async function POST(request: Request) {
     // wacrm is single-tenant-per-WhatsApp-number — letting two accounts
     // bind the same number causes the webhook's `.single()` lookup to
     // throw PGRST116 ("multiple rows"), silently dropping every
-    // inbound message. See issue #136. Post-multi-user we key on
-    // account_id (not user_id) since teammates inside the same account
-    // all share one config; the conflict is between accounts.
+    // inbound message. See issue #136. Teammates may configure multiple
+    // numbers in the same account, but a given number remains exclusive
+    // to one account.
     const { data: claimed, error: claimedError } = await supabaseAdmin()
       .from('whatsapp_config')
       .select('account_id')
@@ -393,11 +407,22 @@ export async function POST(request: Request) {
     // around), and we need the stored verify_token — the settings form
     // never shows it, so a save that leaves the field blank must keep it
     // rather than null it out.
-    const { data: existing } = await supabase
+    let existingQuery = supabase
       .from('whatsapp_config')
-      .select('id, registered_at, phone_number_id, verify_token')
-      .eq('account_id', accountId)
-      .maybeSingle()
+      .select('id, registered_at, phone_number_id, verify_token, is_primary')
+      .eq('account_id', accountId);
+    existingQuery = config_id
+      ? existingQuery.eq('id', config_id)
+      : existingQuery.eq('phone_number_id', phone_number_id);
+    const { data: existing, error: existingError } =
+      await existingQuery.maybeSingle();
+    if (existingError) {
+      console.error('Error fetching existing whatsapp_config:', existingError);
+      return NextResponse.json(
+        { error: 'Failed to load the selected WhatsApp configuration' },
+        { status: 500 },
+      );
+    }
 
     // Encrypt sensitive tokens before storing
     let encryptedAccessToken: string
@@ -502,6 +527,7 @@ export async function POST(request: Request) {
     // user through a retry.
     const baseRow = {
       phone_number_id,
+      display_phone_number: phoneInfo.display_phone_number ?? null,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
       verify_token: encryptedVerifyToken,
@@ -510,14 +536,33 @@ export async function POST(request: Request) {
       registered_at: registrationError ? null : registeredAt,
       subscribed_apps_at: subscribedAppsAt ?? null,
       last_registration_error: registrationError,
+      is_primary:
+        typeof is_primary === 'boolean'
+          ? is_primary
+          : existing?.is_primary ?? true,
       updated_at: new Date().toISOString(),
+    }
+
+    if (baseRow.is_primary) {
+      const { error: demoteError } = await supabase
+        .from('whatsapp_config')
+        .update({ is_primary: false })
+        .eq('account_id', accountId)
+        .neq('id', existing?.id ?? '00000000-0000-0000-0000-000000000000');
+      if (demoteError) {
+        console.error('Error updating primary WhatsApp number:', demoteError);
+        return NextResponse.json(
+          { error: 'Failed to update the primary WhatsApp number' },
+          { status: 500 },
+        );
+      }
     }
 
     if (existing) {
       const { error: updateError } = await supabase
         .from('whatsapp_config')
         .update(baseRow)
-        .eq('account_id', accountId)
+        .eq('id', existing.id)
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
@@ -587,7 +632,7 @@ export async function POST(request: Request) {
  * Used by the "Reset Configuration" button to recover from a corrupted
  * encrypted token (mismatched ENCRYPTION_KEY across environments).
  */
-export async function DELETE() {
+export async function DELETE(request: Request) {
   try {
     const supabase = await createClient()
 
@@ -608,10 +653,15 @@ export async function DELETE() {
       )
     }
 
-    const { error: deleteError } = await supabase
+    const selectedConfigId = new URL(request.url).searchParams.get('config_id');
+    let deleteQuery = supabase
       .from('whatsapp_config')
       .delete()
-      .eq('account_id', accountId)
+      .eq('account_id', accountId);
+    deleteQuery = selectedConfigId
+      ? deleteQuery.eq('id', selectedConfigId)
+      : deleteQuery;
+    const { error: deleteError } = await deleteQuery;
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)
@@ -619,6 +669,37 @@ export async function DELETE() {
         { error: 'Failed to delete configuration' },
         { status: 500 }
       )
+    }
+
+    if (selectedConfigId) {
+      const { data: remaining, error: remainingError } = await supabase
+        .from('whatsapp_config')
+        .select('id, is_primary')
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: true })
+      if (remainingError) {
+        console.error('Error selecting replacement primary number:', remainingError);
+        return NextResponse.json(
+          { error: 'Configuration deleted but could not select a primary number' },
+          { status: 500 },
+        );
+      }
+      const replacement = remaining?.find((row) => row.is_primary)
+        ? null
+        : remaining?.[0];
+      if (replacement) {
+        const { error: promoteError } = await supabase
+          .from('whatsapp_config')
+          .update({ is_primary: true })
+          .eq('id', replacement.id);
+        if (promoteError) {
+          console.error('Error promoting replacement primary number:', promoteError);
+          return NextResponse.json(
+            { error: 'Configuration deleted but could not select a primary number' },
+            { status: 500 },
+          );
+        }
+      }
     }
 
     return NextResponse.json({ success: true })

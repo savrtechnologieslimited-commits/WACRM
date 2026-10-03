@@ -13,6 +13,7 @@ import {
   Zap,
   AlertTriangle,
   RotateCcw,
+  Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -31,6 +32,7 @@ import {
   AccordionContent,
 } from '@/components/ui/accordion';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
+import { DEMO_WHATSAPP_NUMBERS } from '@/lib/whatsapp/demo-data';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -63,11 +65,9 @@ type WabaSubscription = {
 export function WhatsAppConfig() {
   const t = useTranslations('Settings.whatsapp');
   const supabase = createClient();
-  // After multi-user, whatsapp_config is one-row-per-account, not
-  // one-row-per-user. We pull `accountId` straight off the auth
-  // context and key every read off it — so a teammate who just
-  // joined an account sees the inviter's saved config without
-  // having to re-enter anything.
+  // WhatsApp config rows are account-scoped; loading them by account
+  // lets teammates manage the same connected numbers without re-entering
+  // credentials saved by the account admin.
   const {
     user,
     accountId,
@@ -82,6 +82,12 @@ export function WhatsAppConfig() {
   const [resetting, setResetting] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
+  const [configRows, setConfigRows] = useState<WhatsAppConfigType[]>([]);
+  const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
+  const [selectedDemoNumberId, setSelectedDemoNumberId] = useState<string>(
+    DEMO_WHATSAPP_NUMBERS[0].id,
+  );
+  const [isAddingNumber, setIsAddingNumber] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
@@ -140,25 +146,34 @@ export function WhatsAppConfig() {
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
 
-  const fetchConfig = useCallback(async (acctId: string) => {
+  const fetchConfig = useCallback(async (
+    acctId: string,
+    configId?: string | null,
+    phoneNumberId?: string,
+  ) => {
     setLoading(true);
     try {
-      // Load form values from Supabase (shows what's in DB).
-      // Switched from `user_id` (which would only match the row's
-      // original author) to `account_id` so every member of the
-      // account sees the same saved configuration. UNIQUE(account_id)
-      // on the table guarantees the .maybeSingle() return type
-      // remains accurate.
-      const { data, error } = await supabase
+      const { data: rows, error } = await supabase
         .from('whatsapp_config')
         .select('*')
         .eq('account_id', acctId)
-        .maybeSingle();
+        .order('is_primary', { ascending: false });
 
       if (error) {
         console.error('Failed to load config row:', error);
+        throw new Error(error.message);
       }
 
+      const configs = (rows ?? []) as WhatsAppConfigType[];
+      setConfigRows(configs);
+      const data =
+        configs.find((row) => row.id === configId) ??
+        configs.find((row) => row.phone_number_id === phoneNumberId) ??
+        configs.find((row) => row.is_primary) ??
+        configs[0] ??
+        null;
+      setSelectedConfigId(data?.id ?? null);
+      setIsAddingNumber(false);
       if (data) {
         setConfig(data);
         setPhoneNumberId(data.phone_number_id || '');
@@ -191,7 +206,10 @@ export function WhatsAppConfig() {
       // Then verify health via the API (decrypts token + pings Meta)
       if (data) {
         try {
-          const res = await fetch('/api/whatsapp/config', { method: 'GET' });
+          const res = await fetch(
+            `/api/whatsapp/config?phone_number_id=${encodeURIComponent(data.phone_number_id)}`,
+            { method: 'GET' },
+          );
           const payload = await res.json();
 
           if (payload.connected) {
@@ -201,6 +219,7 @@ export function WhatsAppConfig() {
             setStatusMeta(null);
             setWabaSubscription(payload.waba_subscription ?? null);
           } else {
+            setSelectedConfigId(null);
             setConnectionStatus('disconnected');
             setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
             setStatusMessage(payload.message || '');
@@ -225,6 +244,29 @@ export function WhatsAppConfig() {
       setLoading(false);
     }
   }, [supabase, t]);
+
+  function handleAddNumber() {
+    if (configRows.length >= 2) {
+      toast.error('Only two WhatsApp numbers are supported per account.');
+      return;
+    }
+    setConfig(null);
+    setSelectedConfigId(null);
+    setIsAddingNumber(true);
+    setPhoneNumberId('');
+    setWabaId('');
+    setAccessToken('');
+    setVerifyToken('');
+    setPin('');
+    setTokenEdited(false);
+    setVerifyEdited(false);
+    setMirrorMedia(true);
+    setConnectionStatus('unknown');
+    setResetReason(null);
+    setStatusMessage('');
+    setStatusMeta(null);
+    setRegistrationProbe(null);
+  }
 
   useEffect(() => {
     // Need both the auth session (`!authLoading`) AND the profile
@@ -254,7 +296,7 @@ export function WhatsAppConfig() {
       const { error } = await supabase
         .from('whatsapp_config')
         .update({ mirror_inbound_media: next })
-        .eq('account_id', accountId);
+        .eq('id', config.id);
       if (error) throw new Error(error.message);
       setConfig({ ...config, mirror_inbound_media: next });
     } catch (error) {
@@ -294,6 +336,8 @@ export function WhatsAppConfig() {
       const payload: Record<string, unknown> = {
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim() || null,
+        ...(config?.id ? { config_id: config.id } : {}),
+        is_primary: config?.is_primary ?? configRows.length === 0,
         // Only sent when the user actually typed one. Left out otherwise
         // (undefined is dropped from the JSON body) so the server keeps the
         // stored token instead of nulling it — see resolveVerifyTokenForSave.
@@ -379,7 +423,9 @@ export function WhatsAppConfig() {
         setPin('');
       }
 
-      if (accountId) await fetchConfig(accountId);
+      if (accountId) {
+        await fetchConfig(accountId, config?.id ?? null, phoneNumberId.trim());
+      }
     } catch (err) {
       console.error('Save error:', err);
       toast.error(t('saveFailed'));
@@ -391,7 +437,12 @@ export function WhatsAppConfig() {
   async function handleTestConnection() {
     try {
       setTesting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'GET' });
+      const res = await fetch(
+        config
+          ? `/api/whatsapp/config?phone_number_id=${encodeURIComponent(config.phone_number_id)}`
+          : '/api/whatsapp/config',
+        { method: 'GET' },
+      );
       const payload = await res.json();
 
       if (payload.connected) {
@@ -426,9 +477,14 @@ export function WhatsAppConfig() {
     setVerifyingRegistration(true);
     setRegistrationProbe(null);
     try {
-      const res = await fetch('/api/whatsapp/config/verify-registration', {
+      const res = await fetch(
+        config
+          ? `/api/whatsapp/config/verify-registration?phone_number_id=${encodeURIComponent(config.phone_number_id)}`
+          : '/api/whatsapp/config/verify-registration',
+        {
         method: 'GET',
-      });
+        },
+      );
       const data = (await res.json()) as RegistrationProbe;
       setRegistrationProbe(data);
       if (data.live) {
@@ -449,13 +505,17 @@ export function WhatsAppConfig() {
   }
 
   async function handleReset() {
+    if (!config) return;
     if (!confirm(t('resetConfirm'))) {
       return;
     }
 
     try {
       setResetting(true);
-      const res = await fetch('/api/whatsapp/config', { method: 'DELETE' });
+      const res = await fetch(
+        `/api/whatsapp/config?config_id=${encodeURIComponent(config.id)}`,
+        { method: 'DELETE' },
+      );
       const data = await res.json();
 
       if (!res.ok) {
@@ -464,19 +524,8 @@ export function WhatsAppConfig() {
       }
 
       toast.success(t('resetDone'));
-      setConfig(null);
-      setPhoneNumberId('');
-      setWabaId('');
-      setAccessToken('');
-      setVerifyToken('');
-      setTokenEdited(false);
-      setVerifyEdited(false);
-      setConnectionStatus('disconnected');
-      setResetReason(null);
-      setStatusMessage('');
-      setStatusMeta(null);
+      if (accountId) await fetchConfig(accountId);
       setSaveFailure(null);
-      setWabaSubscription(null);
     } catch (err) {
       console.error('Reset error:', err);
       toast.error(t('resetFailed'));
@@ -545,6 +594,61 @@ export function WhatsAppConfig() {
         title={t("title")}
         description={t("description")}
       />
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        {configRows.length === 0 &&
+          !isAddingNumber &&
+          DEMO_WHATSAPP_NUMBERS.map((number) => (
+            <Button
+              key={number.id}
+              type="button"
+              variant={selectedDemoNumberId === number.id ? 'default' : 'outline'}
+              onClick={() => setSelectedDemoNumberId(number.id)}
+            >
+              {number.label}
+              {number.isPrimary ? ' · Primary' : ''}
+              {' · Demo'}
+            </Button>
+          ))}
+        {configRows.map((row) => (
+          <Button
+            key={row.id}
+            type="button"
+            variant={selectedConfigId === row.id ? 'default' : 'outline'}
+            onClick={() => accountId && fetchConfig(accountId, row.id)}
+          >
+            {row.display_phone_number || row.phone_number_id}
+            {row.is_primary ? ' · Primary' : ''}
+          </Button>
+        ))}
+        {configRows.length < 2 && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleAddNumber}
+            disabled={!canEditSettings}
+          >
+            Add WhatsApp number
+          </Button>
+        )}
+        {isAddingNumber && (
+          <span className="text-sm text-muted-foreground">
+            Adding another number
+          </span>
+        )}
+      </div>
+      {configRows.length === 0 && !isAddingNumber && (
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+          <Sparkles className="mt-0.5 size-5 shrink-0 text-emerald-300" />
+          <div>
+            <p className="text-sm font-semibold text-emerald-200">
+              WhatsApp multi-number demo
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-emerald-100/80">
+              Previewing {DEMO_WHATSAPP_NUMBERS.find((number) => number.id === selectedDemoNumberId)?.label}. Demo numbers are examples only and cannot send messages. To connect a real sender, choose Add WhatsApp number and enter its Meta credentials below.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">

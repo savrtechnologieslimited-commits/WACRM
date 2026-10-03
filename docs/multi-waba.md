@@ -11,15 +11,34 @@ app secrets. This page walks through the three setups.
 
 | Value | Lives in | Scope |
 | --- | --- | --- |
-| Phone Number ID, WABA ID, access token, verify token, two-step PIN | `whatsapp_config` (one row per wacrm account, token encrypted) | per account |
+| Phone Number ID, WABA ID, access token, verify token, two-step PIN | `whatsapp_config` (one encrypted row per connected number) | per number |
 | Webhook callback URL | your Meta App → WhatsApp → Configuration | per Meta App |
 | `META_APP_SECRET` | server environment | per deployment — **may list several** |
 | `META_APP_ID` | server environment | per deployment — single value |
 
+## Two numbers in one wacrm account
+
+A wacrm account can connect up to two WhatsApp numbers, including numbers
+from different WABAs. Each number has its own credentials, inbox filter,
+contact identity and conversation history. The same customer phone number
+reaching both business numbers appears as two separate contacts.
+
+Inbound-triggered automations and flows reply using the number that received
+the message. A broadcast stores the sender number selected when it is created;
+resuming it continues with that same number. Templates are associated with
+their WABA, so select the matching number when syncing or submitting templates.
+The first connected number remains the account's primary number for account-level
+operations and compatibility with existing data.
+
+Migration `043_multi_number_whatsapp.sql` preserves the existing number as
+primary and backfills existing contacts, conversations and broadcasts to it.
+Apply the migration before using the second number.
+
 Meta signs every webhook delivery with the secret of the App the WABA
 is subscribed to. wacrm checks that signature against
 `META_APP_SECRET` before it looks at the body, then routes the payload
-to the account whose row holds the `phone_number_id` in the delivery.
+to the number configuration whose row holds the `phone_number_id` in the
+delivery.
 
 ## Setup A — many accounts, one Meta App, many WABAs (works out of the box)
 

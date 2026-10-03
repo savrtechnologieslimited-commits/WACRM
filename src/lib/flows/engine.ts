@@ -111,6 +111,19 @@ export function matchesKeywordTrigger(
   return false;
 }
 
+/** Validate the numeric-only collect_input mode without interpreting natural language. */
+export function isValidNumericInput(
+  value: string,
+  config: Pick<CollectInputNodeConfig, "min_value" | "max_value">,
+): boolean {
+  if (!/^\d+$/.test(value)) return false;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) return false;
+  if (config.min_value !== undefined && parsed < config.min_value) return false;
+  if (config.max_value !== undefined && parsed > config.max_value) return false;
+  return true;
+}
+
 /**
  * The strings an inbound message offers to a flow's *entry* trigger.
  *
@@ -332,12 +345,17 @@ async function isDuplicateInbound(
   return (count ?? 0) > 0;
 }
 
+type EntryFlowSelection =
+  | { kind: "start"; flow: FlowRow }
+  | { kind: "already_handled" };
+
 async function findEntryFlow(
   db: AdminClient,
   accountId: string,
+  contactId: string,
   message: ParsedInbound,
   isFirstInbound: boolean,
-): Promise<FlowRow | null> {
+): Promise<EntryFlowSelection | null> {
   // A tap used to be rejected outright here, on the reasoning that
   // interactive replies are responses to existing prompts. That holds
   // only while a prompt is outstanding — and this function runs solely
@@ -364,7 +382,25 @@ async function findEntryFlow(
     if (flow.trigger_type === "keyword") {
       const cfg = flow.trigger_config as KeywordTriggerConfig;
       if (candidates.some((text) => matchesKeywordTrigger(text, cfg))) {
-        return flow;
+        if (cfg.once_per_contact) {
+          const { data: priorRuns, error: priorRunsError } = await db
+            .from("flow_runs")
+            .select("id")
+            .eq("account_id", accountId)
+            .eq("flow_id", flow.id)
+            .eq("contact_id", contactId)
+            .in("status", ["completed", "handed_off", "paused_by_agent"])
+            .limit(1);
+          if (priorRunsError) {
+            console.error(
+              "[flows] checking prior runs before restart failed:",
+              priorRunsError.message,
+            );
+            return { kind: "already_handled" };
+          }
+          if (priorRuns?.length) return { kind: "already_handled" };
+        }
+        return { kind: "start", flow };
       }
     } else if (flow.trigger_type === "first_inbound_message" && isFirstInbound) {
       // Also reachable by a tap now: a broadcast template with a
@@ -373,7 +409,7 @@ async function findEntryFlow(
       // treated a tap that way (the webhook pushes
       // `first_inbound_message` regardless of envelope) — flows were
       // the inconsistent half.
-      return flow;
+      return { kind: "start", flow };
     }
     // 'manual' triggers do not auto-start from inbound messages.
   }
@@ -953,13 +989,21 @@ export async function dispatchInboundToFlows(
     }
 
     // No active run → look for a flow whose entry trigger matches.
-    const flow = await findEntryFlow(
+    const selection = await findEntryFlow(
       db,
       input.accountId,
+      input.contactId,
       input.message,
       input.isFirstInboundMessage,
     );
-    if (!flow || !flow.entry_node_id) {
+    if (!selection) {
+      return { consumed: false, outcome: "no_match" };
+    }
+    if (selection.kind === "already_handled") {
+      return { consumed: true, outcome: "already_completed" };
+    }
+    const flow = selection.flow;
+    if (!flow.entry_node_id) {
       return { consumed: false, outcome: "no_match" };
     }
     const nodes = await loadAllNodes(db, flow.id);
@@ -1029,6 +1073,37 @@ async function handleReplyForActiveRun(
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
     const captured = message.text.trim();
     if (captured.length > 0 && cfg.var_key) {
+      if (
+        cfg.validation === "number" &&
+        !isValidNumericInput(captured, cfg)
+      ) {
+        await logEvent(db, run.id, "fallback_fired", currentNode.node_key, {
+          action: "validation_reprompt",
+          validation: "number",
+          text_length: captured.length,
+        });
+        try {
+          await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text:
+              cfg.invalid_input_message ??
+              "Please enter a valid whole number.",
+          });
+        } catch (err) {
+          await logEvent(db, run.id, "error", currentNode.node_key, {
+            reason: "validation_reprompt_send_failed",
+            detail: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return {
+          consumed: true,
+          flow_run_id: run.id,
+          outcome: "fallback_fired",
+        };
+      }
       // Persist captured value + reset reprompt count atomically.
       const newVars = { ...run.vars, [cfg.var_key]: captured };
       const { error: capErr } = await db

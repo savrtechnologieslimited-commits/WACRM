@@ -31,6 +31,7 @@ interface Step3Props {
   onHeaderMediaUrlChange: (url: string) => void;
   onNext: () => void;
   onBack: () => void;
+  demoMode?: boolean;
 }
 
 const MEDIA_HEADER_TYPES = ['image', 'video', 'document'] as const;
@@ -75,6 +76,7 @@ export function Step3Personalize({
   onHeaderMediaUrlChange,
   onNext,
   onBack,
+  demoMode = false,
 }: Step3Props) {
   const t = useTranslations('Broadcasts.wizard');
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
@@ -90,6 +92,12 @@ export function Step3Personalize({
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (demoMode) {
+        setFirstContact(SAMPLE_CONTACT);
+        setLoadingFields(false);
+        setLoadingPreview(false);
+        return;
+      }
       const supabase = createClient();
       const [fieldsRes, contactRes] = await Promise.all([
         supabase.from('custom_fields').select('*').order('field_name'),
@@ -126,7 +134,7 @@ export function Step3Personalize({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [demoMode]);
 
   const placeholders = useMemo(() => {
     const matches = template.body_text.match(/\{\{(\d+)\}\}/g);

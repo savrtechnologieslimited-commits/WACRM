@@ -9,6 +9,9 @@ export async function GET(
 ) {
   try {
     const { mediaId } = await params
+    const phoneNumberId = new URL(request.url).searchParams.get(
+      'phone_number_id',
+    )
 
     if (!mediaId) {
       return NextResponse.json(
@@ -31,10 +34,8 @@ export async function GET(
       )
     }
 
-    // Resolve the caller's account_id — whatsapp_config is one-per-
-    // account post-multi-user, so a teammate fetching media for a
-    // conversation in the shared inbox needs the account's config,
-    // not their personal (non-existent) row.
+    // Resolve the caller's account_id so a teammate fetching media for
+    // any number's conversation can use that account's saved credentials.
     const { data: profile } = await supabase
       .from('profiles')
       .select('account_id')
@@ -49,11 +50,14 @@ export async function GET(
     }
 
     // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
+    let configQuery = supabase
       .from('whatsapp_config')
       .select('*')
       .eq('account_id', accountId)
-      .single()
+    configQuery = phoneNumberId
+      ? configQuery.eq('phone_number_id', phoneNumberId)
+      : configQuery.eq('is_primary', true)
+    const { data: config, error: configError } = await configQuery.single()
 
     if (configError || !config) {
       return NextResponse.json(

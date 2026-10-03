@@ -57,6 +57,10 @@ import {
   extractVariableIndices,
   TEMPLATE_LIMITS,
 } from '@/lib/whatsapp/template-validators';
+import {
+  DEMO_WHATSAPP_NUMBERS,
+  getDemoTemplateForNumber,
+} from '@/lib/whatsapp/demo-data';
 
 const CATEGORIES = ['Marketing', 'Utility', 'Authentication'] as const;
 type HeaderFormat = 'none' | 'text' | 'image' | 'video' | 'document';
@@ -132,10 +136,15 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
 export function TemplateManager() {
   const t = useTranslations('Settings.templates');
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  const { user, accountId, loading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  const [phoneNumbers, setPhoneNumbers] = useState<
+    { id: string; label: string; wabaId: string | null }[]
+  >([]);
+  const [selectedPhoneNumberId, setSelectedPhoneNumberId] = useState('');
+  const [demoMode, setDemoMode] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -172,35 +181,71 @@ export function TemplateManager() {
     [form.header_format, form.header_content],
   );
 
-  // Resize body_samples so it always has exactly bodyVarCount entries.
-  // (We mutate via setForm in an effect so React owns the state.)
-  useEffect(() => {
-    setForm((prev) => {
-      if (prev.body_samples.length === bodyVarCount) return prev;
-      const next = prev.body_samples.slice(0, bodyVarCount);
-      while (next.length < bodyVarCount) next.push('');
-      return { ...prev, body_samples: next };
-    });
-  }, [bodyVarCount]);
+  const bodySamples = useMemo(() => {
+    const samples = form.body_samples.slice(0, bodyVarCount);
+    while (samples.length < bodyVarCount) samples.push('');
+    return samples;
+  }, [bodyVarCount, form.body_samples]);
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
-      setLoading(false);
+    if (!user || !accountId) {
+      void Promise.resolve().then(() => setLoading(false));
       return;
     }
-    fetchTemplates(user.id);
+    void (async () => {
+      const { data: configs, error } = await supabase
+        .from('whatsapp_config')
+        .select('phone_number_id, display_phone_number, waba_id, is_primary')
+        .eq('account_id', accountId)
+        .order('is_primary', { ascending: false });
+      if (error) {
+        console.error('Failed to load WhatsApp template accounts:', error);
+        toast.error(t('toastLoadFailed'));
+        setLoading(false);
+        return;
+      }
+      const rows = (configs ?? []).map((config) => ({
+        id: config.phone_number_id,
+        label: config.display_phone_number || config.phone_number_id,
+        wabaId: config.waba_id,
+      }));
+      if (rows.length === 0) {
+        const demoNumbers = DEMO_WHATSAPP_NUMBERS.map((number) => ({
+          id: number.id,
+          label: number.label,
+          wabaId: number.wabaId,
+        }));
+        setDemoMode(true);
+        setPhoneNumbers(demoNumbers);
+        setSelectedPhoneNumberId(demoNumbers[0].id);
+        setTemplates([getDemoTemplateForNumber(demoNumbers[0].id)]);
+        setLoading(false);
+        return;
+      }
+      setDemoMode(false);
+      setPhoneNumbers(rows);
+      const primary = (configs ?? []).find((config) => config.is_primary) ??
+        configs?.[0];
+      setSelectedPhoneNumberId(primary?.phone_number_id ?? '');
+      if (primary) await fetchTemplates(user.id, primary.waba_id);
+      else setLoading(false);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id]);
+  }, [authLoading, user?.id, accountId]);
 
-  async function fetchTemplates(userId: string) {
+  async function fetchTemplates(userId: string, wabaId: string | null) {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('message_templates')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
+      query = wabaId
+        ? query.eq('waba_id', wabaId)
+        : query.is('waba_id', null);
+      const { data, error } = await query;
       if (error) throw error;
       setTemplates(data || []);
     } catch (err) {
@@ -213,14 +258,18 @@ export function TemplateManager() {
 
   function buildSubmitPayload() {
     const sample_values: TemplateSampleValues = {};
-    if (form.body_samples.some((v) => v.trim())) {
-      sample_values.body = form.body_samples.map((v) => v.trim());
+    if (bodySamples.some((v) => v.trim())) {
+      sample_values.body = bodySamples.map((v) => v.trim());
     }
     if (form.header_format === 'text' && form.header_sample.trim()) {
       sample_values.header = [form.header_sample.trim()];
     }
 
     return {
+      phone_number_id: selectedPhoneNumberId,
+      waba_id:
+        phoneNumbers.find((number) => number.id === selectedPhoneNumberId)
+          ?.wabaId ?? null,
       name: form.name.trim(),
       category: form.category,
       language: form.language.trim() || 'en_US',
@@ -264,6 +313,10 @@ export function TemplateManager() {
   }
 
   async function handleSubmit() {
+    if (demoMode) {
+      toast.info('Demo templates are examples only. Connect a real WhatsApp number to manage templates.');
+      return;
+    }
     // AUTHENTICATION is blocked by the persistent banner + disabled
     // submit button; this is a defensive second line of defense.
     if (form.category === 'Authentication') return;
@@ -286,7 +339,12 @@ export function TemplateManager() {
       }
       // Refresh first, then close — re-opening the dialog
       // immediately should not show a stale list.
-      if (user) await fetchTemplates(user.id);
+      if (user) {
+        const selectedWabaId =
+          phoneNumbers.find((number) => number.id === selectedPhoneNumberId)
+            ?.wabaId ?? null;
+        await fetchTemplates(user.id, selectedWabaId);
+      }
       toast.success(
         data.dry_run
           ? isEdit
@@ -308,10 +366,18 @@ export function TemplateManager() {
   }
 
   async function handleSyncFromMeta() {
+    if (demoMode) {
+      toast.info('Meta template sync is unavailable for demo numbers.');
+      return;
+    }
     if (!user) return;
     setSyncing(true);
     try {
-      const res = await fetch('/api/whatsapp/templates/sync', { method: 'POST' });
+      const res = await fetch('/api/whatsapp/templates/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number_id: selectedPhoneNumberId }),
+      });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data?.error || `Sync failed (HTTP ${res.status})`);
@@ -340,7 +406,10 @@ export function TemplateManager() {
           { duration: 10000 },
         );
       }
-      await fetchTemplates(user.id);
+      const selectedWabaId =
+        phoneNumbers.find((number) => number.id === selectedPhoneNumberId)
+          ?.wabaId ?? null;
+      await fetchTemplates(user.id, selectedWabaId);
     } catch (err) {
       console.error('Template sync error:', err);
       toast.error(err instanceof Error ? err.message : t('toastSyncError'));
@@ -350,6 +419,11 @@ export function TemplateManager() {
   }
 
   async function confirmDelete() {
+    if (demoMode) {
+      setTemplateToDelete(null);
+      toast.info('Demo templates cannot be deleted.');
+      return;
+    }
     const target = templateToDelete;
     if (!target || deletingId) return;
     setDeletingId(target.id);
@@ -524,22 +598,57 @@ export function TemplateManager() {
         description={t('description')}
         action={
           <div className="flex items-center gap-2">
+            {phoneNumbers.length > 0 && (
+              <Select
+                value={selectedPhoneNumberId}
+                onValueChange={(value) => {
+                  setSelectedPhoneNumberId(value ?? '');
+                  const target = phoneNumbers.find((number) => number.id === value);
+                  if (demoMode && target) {
+                    setTemplates([getDemoTemplateForNumber(target.id)]);
+                  } else if (target && user) {
+                    void fetchTemplates(user.id, target.wabaId);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-44">
+                  <SelectValue placeholder="WhatsApp number" />
+                </SelectTrigger>
+                <SelectContent>
+                  {phoneNumbers.map((number) => (
+                    <SelectItem key={number.id} value={number.id}>
+                      {number.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Button
               variant="outline"
               onClick={handleSyncFromMeta}
-              disabled={syncing}
+              disabled={syncing || demoMode}
               title={t('syncTitle')}
             >
               <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
               {syncing ? t('syncing') : t('syncFromMeta')}
             </Button>
-            <Button onClick={openCreate}>
+            <Button
+              onClick={openCreate}
+              disabled={demoMode}
+              title={demoMode ? 'Connect a real WhatsApp number to create templates' : undefined}
+            >
               <Plus className="size-4" />
               {t('newTemplate')}
             </Button>
           </div>
         }
       />
+
+      {demoMode && (
+        <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+          Demo templates are read-only examples. Switching demo numbers previews a separate WABA; sync, create, edit, and delete are disabled until real numbers are connected.
+        </div>
+      )}
 
       {templates.length === 0 ? (
         <Card>
@@ -612,6 +721,7 @@ export function TemplateManager() {
                         variant="ghost"
                         size="sm"
                         onClick={() => openEdit(template)}
+                        disabled={demoMode}
                         title={t('editTitle')}
                         aria-label={t('editLabel')}
                         className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
@@ -625,6 +735,7 @@ export function TemplateManager() {
                         variant="ghost"
                         size="sm"
                         onClick={() => openEdit(template)}
+                        disabled={demoMode}
                         title={t('resubmitTitle')}
                         aria-label={t('resubmitLabel')}
                         className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
@@ -637,7 +748,7 @@ export function TemplateManager() {
                       variant="ghost"
                       size="icon"
                       onClick={() => setTemplateToDelete(template)}
-                      disabled={deletingId === template.id}
+                      disabled={demoMode || deletingId === template.id}
                       aria-label={
                         template.meta_template_id
                           ? t('deleteMetaLocallyAria')
@@ -919,7 +1030,7 @@ export function TemplateManager() {
                   <Label className="text-[11px] text-muted-foreground">
                     {t('sampleValues')}
                   </Label>
-                  {form.body_samples.map((val, i) => {
+                  {bodySamples.map((val, i) => {
                     const inputId = `template-body-sample-${i}`;
                     return (
                       <Input
@@ -929,7 +1040,7 @@ export function TemplateManager() {
                         placeholder={t('samplePlaceholder', { var: `{{${i + 1}}}` })}
                         value={val}
                         onChange={(e) => {
-                          const next = [...form.body_samples];
+                          const next = [...bodySamples];
                           next[i] = e.target.value;
                           setForm({ ...form, body_samples: next });
                         }}

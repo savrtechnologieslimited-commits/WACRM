@@ -93,6 +93,7 @@ import {
   isSuspending,
   isTerminal,
   evaluateConditionPredicate,
+  isValidNumericInput,
 } from "./engine";
 import type {
   engineSendInteractiveButtons,
@@ -192,6 +193,18 @@ describe("matchReplyId", () => {
 describe("matchesKeywordTrigger", () => {
   it("returns false for empty text", () => {
     expect(matchesKeywordTrigger("", { keywords: ["hi"] })).toBe(false);
+  });
+
+  describe("isValidNumericInput", () => {
+    it("accepts only safe whole-number text within inclusive bounds", () => {
+      expect(isValidNumericInput("2", { min_value: 1 })).toBe(true);
+      expect(isValidNumericInput("0", { min_value: 0, max_value: 5 })).toBe(true);
+      expect(isValidNumericInput("6", { min_value: 0, max_value: 5 })).toBe(false);
+      expect(isValidNumericInput("0", { min_value: 1 })).toBe(false);
+      expect(isValidNumericInput("2.5", { min_value: 0 })).toBe(false);
+      expect(isValidNumericInput("two", { min_value: 0 })).toBe(false);
+      expect(isValidNumericInput("9007199254740992", { min_value: 0 })).toBe(false);
+    });
   });
 
   it("returns false when keywords array is empty", () => {

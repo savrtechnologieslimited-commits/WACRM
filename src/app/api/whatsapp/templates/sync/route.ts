@@ -127,7 +127,7 @@ function extractSampleValues(
   return sv
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     // Syncing rewrites the account-wide template catalog, which is
     // settings-class data: `canEditSettings` and the message_templates
@@ -135,11 +135,15 @@ export async function POST() {
     // Resolving account_id off the profile only proved membership.
     const { supabase, accountId, userId } = await requireRole('admin')
 
-    const { data: config, error: configError } = await supabase
+    const body = await request.json().catch(() => ({}));
+    let configQuery = supabase
       .from('whatsapp_config')
       .select('*')
-      .eq('account_id', accountId)
-      .single()
+      .eq('account_id', accountId);
+    configQuery = typeof body.phone_number_id === 'string'
+      ? configQuery.eq('phone_number_id', body.phone_number_id)
+      : configQuery.eq('is_primary', true);
+    const { data: config, error: configError } = await configQuery.single();
 
     if (configError || !config) {
       return NextResponse.json(
@@ -223,6 +227,7 @@ export async function POST() {
         // post-017, so an INSERT without it errors.
         account_id: accountId,
         user_id: userId,
+        waba_id: config.waba_id,
         name: t.name,
         category: normalizeCategory(t.category),
         language: t.language,
@@ -243,6 +248,7 @@ export async function POST() {
         .from('message_templates')
         .select('id')
         .eq('account_id', accountId)
+        .eq('waba_id', config.waba_id)
         .eq('name', t.name)
         .eq('language', t.language)
         .maybeSingle()

@@ -66,6 +66,7 @@ vi.mock('@supabase/supabase-js', () => ({
                     {
                       account_id: 'acc-1',
                       user_id: 'user-1',
+                      phone_number_id: 'pn-1',
                       access_token: 'enc',
                       mirror_inbound_media: h.state.mirrorInboundMedia,
                     },
@@ -76,48 +77,43 @@ vi.mock('@supabase/supabase-js', () => ({
           }
         case 'conversations':
           // findOrCreateConversation: select().eq().eq().order().limit()
-          return {
-            select: () => ({
-              eq: () => ({
-                eq: () => ({
-                  order: () => ({
-                    limit: () =>
-                      Promise.resolve({
-                        data: [h.state.conversation],
-                        error: null,
-                      }),
+          {
+            const chain: Record<string, unknown> = {
+              eq: () => chain,
+              order: () => ({
+                limit: () =>
+                  Promise.resolve({
+                    data: [h.state.conversation],
+                    error: null,
                   }),
-                }),
               }),
-            }),
+            }
+            return { select: () => chain }
           }
         case 'broadcast_recipients':
           // Two chains land here:
           //   flagBroadcastReplyIfAny: select().eq().eq().in().order().limit()
           //   handleStatusUpdate:      select().eq().maybeSingle(), then
           //                            update().eq()
-          return {
-            select: () => ({
-              eq: () => ({
-                eq: () => ({
-                  in: () => ({
-                    order: () => ({
-                      limit: () =>
-                        Promise.resolve({ data: [], error: null }),
-                    }),
-                  }),
+          {
+            const chain: Record<string, unknown> = {
+              eq: () => chain,
+              in: () => chain,
+              order: () => chain,
+              limit: () => Promise.resolve({ data: [], error: null }),
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: h.state.broadcastRecipient,
+                  error: null,
                 }),
-                maybeSingle: () =>
-                  Promise.resolve({
-                    data: h.state.broadcastRecipient,
-                    error: null,
-                  }),
-              }),
-            }),
+            }
+            return {
+              select: () => chain,
             update: (patch: Record<string, unknown>) => {
               h.state.recipientUpdates.push(patch)
               return { eq: () => Promise.resolve({ error: null }) }
             },
+          }
           }
         case 'contacts':
           // Three chains land here, all from findOrCreateContact:
@@ -125,17 +121,19 @@ vi.mock('@supabase/supabase-js', () => ({
           //   identity backfill:     update().eq().select().maybeSingle()
           //   create:                insert().select().single()
           return {
-            select: () => ({
-              eq: () => ({
-                eq: () => ({
-                  maybeSingle: () =>
-                    Promise.resolve({
-                      data: h.state.contactByWaUserId,
-                      error: null,
-                    }),
-                }),
-              }),
-            }),
+            select: () => {
+              const chain: Record<string, unknown> = {
+                eq: () => chain,
+                maybeSingle: () =>
+                  Promise.resolve({
+                    data: h.state.contactByWaUserId,
+                    error: null,
+                  }),
+                like: () =>
+                  Promise.resolve({ data: [], error: null }),
+              }
+              return chain
+            },
             update: (patch: Record<string, unknown>) => {
               h.state.contactUpdates.push(patch)
               return {
@@ -165,8 +163,18 @@ vi.mock('@supabase/supabase-js', () => ({
             // Two different chains land here, told apart by the count
             // option: the prior-message count (head request) and the
             // reply-context parent lookup.
-            select: (_columns: string, options?: { head?: boolean }) =>
-              options?.head
+            select: (columns: string, options?: { head?: boolean }) =>
+              columns.includes('conversation:conversations')
+                ? {
+                    eq: () => ({
+                      eq: () =>
+                        Promise.resolve({
+                          data: [{ id: 'message-1' }],
+                          error: null,
+                        }),
+                    }),
+                  }
+                : options?.head
                 ? // priorCustomerMsgCount: select('id',{count,head}).eq().eq()
                   {
                     eq: () => ({
@@ -197,7 +205,10 @@ vi.mock('@supabase/supabase-js', () => ({
             // Status webhook mirror (#535): update(...).eq('message_id', ...)
             update: (patch: Record<string, unknown>) => {
               h.state.messageUpdates.push(patch)
-              return { eq: () => Promise.resolve({ error: null }) }
+              return {
+                eq: () => Promise.resolve({ error: null }),
+                in: () => Promise.resolve({ error: null }),
+              }
             },
             // Idempotent insert: upsert(...).select('id')
             upsert: (row: Record<string, unknown>, options: unknown) => {
@@ -548,7 +559,7 @@ describe('inbound webhook: inbound media is mirrored (#466)', () => {
     // the mirror failing must never cost us the message.
     expect(h.state.upsertCalls).toHaveLength(1)
     expect(h.state.upsertCalls[0].row).toMatchObject({
-      media_url: '/api/whatsapp/media/1234567890123456',
+      media_url: '/api/whatsapp/media/1234567890123456?phone_number_id=pn-1',
       media_type: 'image/jpeg',
     })
   })
@@ -559,7 +570,7 @@ describe('inbound webhook: inbound media is mirrored (#466)', () => {
     await runWebhook(IMAGE_MESSAGE)
 
     expect(h.state.upsertCalls[0].row).toMatchObject({
-      media_url: '/api/whatsapp/media/1234567890123456',
+      media_url: '/api/whatsapp/media/1234567890123456?phone_number_id=pn-1',
     })
   })
 
@@ -585,7 +596,7 @@ describe('inbound webhook: inbound media is mirrored (#466)', () => {
     expect(mockDownloadMedia).not.toHaveBeenCalled()
     expect(h.state.storageUploads).toHaveLength(0)
     expect(h.state.upsertCalls[0].row).toMatchObject({
-      media_url: '/api/whatsapp/media/999',
+      media_url: '/api/whatsapp/media/999?phone_number_id=pn-1',
       media_type: 'application/pdf',
     })
   })
@@ -627,7 +638,7 @@ describe('inbound webhook: inbound media is mirrored (#466)', () => {
     expect(mockDownloadMedia).not.toHaveBeenCalled()
     expect(h.state.storageUploads).toHaveLength(0)
     expect(h.state.upsertCalls[0].row).toMatchObject({
-      media_url: '/api/whatsapp/media/1234567890123456',
+      media_url: '/api/whatsapp/media/1234567890123456?phone_number_id=pn-1',
       // Still recorded — the MIME type costs nothing and makes the
       // download name right even for proxied media.
       media_type: 'image/jpeg',
@@ -837,6 +848,7 @@ describe('inbound webhook: business-scoped user IDs (#519)', () => {
       expect.anything(),
       'acc-1',
       '15551230000',
+      'pn-1',
     )
     expect(h.state.contactInserts).toHaveLength(0)
     expect(h.state.contactUpdates).toHaveLength(0)

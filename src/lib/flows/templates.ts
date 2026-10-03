@@ -286,6 +286,150 @@ const LEAD_CAPTURE: FlowTemplate = {
 };
 
 // ============================================================
+// 4. Travel enquiry — SAVR-ready questionnaire using WACRM flows
+// ============================================================
+const TRAVEL_ENQUIRY: FlowTemplate = {
+  slug: "travel_enquiry_whatsapp",
+  name: "Travel Enquiry WhatsApp Flow",
+  description:
+    "Collect a deterministic travel enquiry over WhatsApp. Destination master lookup, destination PDFs, and SAVR CRM linkage require the SAVR integration.",
+  icon: "MessageSquare",
+  trigger_type: "keyword",
+  trigger_config: {
+    keywords: ["hi", "hello", "hey"],
+    match_type: "exact",
+    once_per_contact: true,
+  },
+  entry_node_id: "start",
+  nodes: [
+    {
+      node_key: "start",
+      node_type: "start",
+      config: { next_node_key: "welcome" },
+    },
+    {
+      node_key: "welcome",
+      node_type: "send_buttons",
+      config: {
+        text: "Welcome! How can we help you?",
+        buttons: [
+          { reply_id: "domestic", title: "Domestic", next_node_key: "domestic_destination" },
+          { reply_id: "international", title: "International", next_node_key: "international_destination" },
+          { reply_id: "speak_to_agent", title: "Speak to Agent", next_node_key: "agent_handoff" },
+        ],
+      } as SendButtonsNodeConfig,
+    },
+    {
+      node_key: "domestic_destination",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Which domestic destination are you interested in?",
+        var_key: "destination",
+        next_node_key: "ask_name",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "international_destination",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Which international destination are you interested in?",
+        var_key: "destination",
+        next_node_key: "ask_name",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "agent_handoff",
+      node_type: "handoff",
+      config: {
+        note: "Customer requested a travel agent.",
+      } as HandoffNodeConfig,
+    },
+    {
+      node_key: "ask_name",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "May I know your name?",
+        var_key: "name",
+        next_node_key: "ask_travel_date",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "ask_travel_date",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "When are you planning to travel?",
+        var_key: "travel_date",
+        next_node_key: "ask_adults",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "ask_adults",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "How many adults will be travelling?",
+        var_key: "adults",
+        validation: "number",
+        min_value: 1,
+        invalid_input_message: "Please enter a valid number of adults (1 or more).",
+        next_node_key: "ask_children",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "ask_children",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "How many children will be travelling?",
+        var_key: "children",
+        validation: "number",
+        min_value: 0,
+        invalid_input_message: "Please enter a valid number of children (0 or more).",
+        next_node_key: "ask_departure_city",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "ask_departure_city",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Which city will you be travelling from?",
+        var_key: "departure_city",
+        next_node_key: "ask_budget",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "ask_budget",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "What is your approximate budget for the trip?",
+        var_key: "budget",
+        next_node_key: "ask_special_requirements",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "ask_special_requirements",
+      node_type: "collect_input",
+      config: {
+        prompt_text: "Do you have any special requirements or preferences?",
+        var_key: "special_requirements",
+        next_node_key: "complete",
+      } as CollectInputNodeConfig,
+    },
+    {
+      node_key: "complete",
+      node_type: "send_message",
+      config: {
+        text: "Thank you! We've received your travel requirements. Our team will get back to you shortly.",
+        next_node_key: "end",
+      } as SendMessageNodeConfig,
+    },
+    {
+      node_key: "end",
+      node_type: "end",
+      config: {},
+    },
+  ],
+};
+
+// ============================================================
 // Registry
 // ============================================================
 
@@ -293,6 +437,7 @@ const TEMPLATES: Record<string, FlowTemplate> = {
   welcome_menu: WELCOME_MENU,
   faq_bot: FAQ_BOT,
   lead_capture: LEAD_CAPTURE,
+  travel_enquiry_whatsapp: TRAVEL_ENQUIRY,
 };
 
 export function getFlowTemplate(slug: string): FlowTemplate | null {

@@ -78,6 +78,7 @@ export async function resolveAuditUserId(
     .from('whatsapp_config')
     .select('user_id')
     .eq('account_id', accountId)
+    .eq('is_primary', true)
     .maybeSingle();
   const configOwner = config?.user_id as string | undefined;
   if (configOwner) return configOwner;
@@ -96,6 +97,7 @@ export async function resolveAuditUserId(
 
 export interface ContactInput {
   phone: string;
+  phoneNumberId?: string;
   name?: string | null;
   email?: string | null;
   company?: string | null;
@@ -125,7 +127,27 @@ export async function findOrCreateContact(
     );
   }
 
-  const existing = await findExistingContact(db, accountId, sanitized);
+  let phoneNumberId = input.phoneNumberId;
+  if (!phoneNumberId) {
+    const { data: primaryConfig, error: configError } = await db
+      .from('whatsapp_config')
+      .select('phone_number_id')
+      .eq('account_id', accountId)
+      .eq('is_primary', true)
+      .maybeSingle();
+    if (configError) {
+      console.error('[api/v1/contacts] primary WhatsApp config lookup failed:', configError);
+      throw new ContactError('Failed to resolve WhatsApp number', 500);
+    }
+    phoneNumberId = primaryConfig?.phone_number_id ?? undefined;
+  }
+
+  const existing = await findExistingContact(
+    db,
+    accountId,
+    sanitized,
+    phoneNumberId,
+  );
   if (existing) return { id: existing.id, created: false };
 
   const { data: created, error } = await db
@@ -133,6 +155,9 @@ export async function findOrCreateContact(
     .insert({
       account_id: accountId,
       user_id: auditUserId,
+      ...(phoneNumberId
+        ? { channel_phone_number_id: phoneNumberId }
+        : {}),
       phone: sanitized,
       name: input.name ?? sanitized,
       email: input.email ?? null,
@@ -145,7 +170,12 @@ export async function findOrCreateContact(
     // Lost a race against a concurrent create — the unique index
     // rejected the duplicate. Re-resolve to the winner.
     if (isUniqueViolation(error)) {
-      const raced = await findExistingContact(db, accountId, sanitized);
+      const raced = await findExistingContact(
+        db,
+        accountId,
+        sanitized,
+        phoneNumberId,
+      );
       if (raced) return { id: raced.id, created: false };
     }
     console.error('[api/v1/contacts] create error:', error);

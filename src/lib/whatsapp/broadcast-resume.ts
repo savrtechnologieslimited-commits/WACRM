@@ -146,7 +146,7 @@ export async function planBroadcastResume(
 ): Promise<ResumePlan> {
   const { data: broadcast, error: bcError } = await db
     .from('broadcasts')
-    .select('id, template_name, template_language')
+    .select('id, template_name, template_language, phone_number_id')
     .eq('id', broadcastId)
     .eq('account_id', accountId)
     .maybeSingle();
@@ -205,11 +205,14 @@ export async function planBroadcastResume(
     );
   }
 
-  const { data: config, error: configError } = await db
+  let configQuery = db
     .from('whatsapp_config')
     .select('*')
-    .eq('account_id', accountId)
-    .single();
+    .eq('account_id', accountId);
+  configQuery = broadcast.phone_number_id
+    ? configQuery.eq('phone_number_id', broadcast.phone_number_id)
+    : configQuery.eq('is_primary', true);
+  const { data: config, error: configError } = await configQuery.single();
   if (configError || !config) {
     throw new BroadcastError(
       'whatsapp_not_configured',
@@ -222,7 +225,8 @@ export async function planBroadcastResume(
     db,
     accountId,
     broadcast.template_name,
-    broadcast.template_language
+    broadcast.template_language,
+    config.waba_id,
   );
   if (resolvedTemplate.malformed) {
     throw new BroadcastError(

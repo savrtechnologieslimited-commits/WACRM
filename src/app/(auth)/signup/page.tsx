@@ -1,21 +1,21 @@
-"use client";
+'use client';
 
-import { Suspense, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Suspense, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
+import { createClient } from '@/lib/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
+} from '@/components/ui/card';
+import { MessageSquare, CheckCircle, UsersRound } from 'lucide-react';
 
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
@@ -34,13 +34,13 @@ function SignupPageInner() {
   // verification → redirect round-trip. `emailRedirectTo` below
   // sends the verified user to /join/<token> so they land on the
   // redeem step instead of being dropped on /dashboard.
-  const inviteToken = searchParams.get("invite");
-  const t = useTranslations("SignupPage");
+  const inviteToken = searchParams.get('invite');
+  const t = useTranslations('SignupPage');
 
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -51,12 +51,12 @@ function SignupPageInner() {
     setError(null);
 
     if (password !== confirmPassword) {
-      setError(t("passwordsMismatch"));
+      setError(t('passwordsMismatch'));
       return;
     }
 
     if (password.length < 6) {
-      setError(t("passwordTooShort"));
+      setError(t('passwordTooShort'));
       return;
     }
 
@@ -74,7 +74,7 @@ function SignupPageInner() {
     // → Redirect URLs; see docs/auth-emails.md.
     const next = inviteToken
       ? `/join/${encodeURIComponent(inviteToken)}`
-      : "/dashboard";
+      : '/dashboard';
     const emailRedirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
 
     const { error } = await supabase.auth.signUp({
@@ -100,20 +100,22 @@ function SignupPageInner() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#0b141a] px-4 py-10">
+        <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-96 w-96 -translate-x-1/2 rounded-full bg-[#25d366]/10 blur-3xl" />
+        <Card className="relative w-full max-w-md overflow-hidden rounded-2xl border-[#26343b] bg-[#111b21] text-[#e9edef] shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+          <div className="absolute inset-x-0 top-0 h-1 bg-[#25d366]" />
           <CardHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <CheckCircle className="h-6 w-6 text-primary" />
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#25d366]/10">
+              <CheckCircle className="h-6 w-6 text-[#25d366]" />
             </div>
-            <CardTitle className="text-xl text-foreground">
-              {t("checkEmailTitle")}
+            <CardTitle className="text-xl text-[#e9edef]">
+              {t('checkEmailTitle')}
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              {t.rich("checkEmailDesc", {
+              {t.rich('checkEmailDesc', {
                 email,
                 strong: (chunks) => (
-                  <span className="text-foreground">{chunks}</span>
+                  <span className="text-[#e9edef]">{chunks}</span>
                 ),
               })}
             </CardDescription>
@@ -123,14 +125,14 @@ function SignupPageInner() {
               href={
                 inviteToken
                   ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
+                  : '/login'
               }
             >
               <Button
                 variant="outline"
-                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="w-full border-[#2a3942] text-[#cbd5d9] hover:bg-[#202c33] hover:text-[#e9edef]"
               >
-                {t("backToSignIn")}
+                {t('backToSignIn')}
               </Button>
             </Link>
           </CardContent>
@@ -140,21 +142,23 @@ function SignupPageInner() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="relative isolate flex min-h-screen items-center justify-center overflow-hidden bg-[#0b141a] px-4 py-10">
+      <div className="pointer-events-none absolute -top-40 left-1/2 -z-10 h-96 w-96 -translate-x-1/2 rounded-full bg-[#25d366]/10 blur-3xl" />
+      <Card className="relative w-full max-w-md overflow-hidden rounded-2xl border-[#26343b] bg-[#111b21] text-[#e9edef] shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+        <div className="absolute inset-x-0 top-0 h-1 bg-[#25d366]" />
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#25d366]/10">
             {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-primary" />
+              <UsersRound className="h-6 w-6 text-[#25d366]" />
             ) : (
-              <MessageSquare className="h-6 w-6 text-primary" />
+              <MessageSquare className="h-6 w-6 text-[#25d366]" />
             )}
           </div>
-          <CardTitle className="text-xl text-foreground">
-            {inviteToken ? t("titleJoin") : t("title")}
+          <CardTitle className="text-xl text-[#e9edef]">
+            {inviteToken ? t('titleJoin') : t('title')}
           </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            {inviteToken ? t("descJoin") : t("desc")}
+          <CardDescription className="text-[#8696a0]">
+            {inviteToken ? t('descJoin') : t('desc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -166,85 +170,85 @@ function SignupPageInner() {
             )}
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="fullName" className="text-muted-foreground">
-                {t("fullNameLabel")}
+              <Label htmlFor="fullName" className="text-[#cbd5d9]">
+                {t('fullNameLabel')}
               </Label>
               <Input
                 id="fullName"
                 type="text"
-                placeholder={t("fullNamePlaceholder")}
+                placeholder={t('fullNamePlaceholder')}
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="border-[#2a3942] bg-[#202c33] text-[#e9edef] placeholder:text-[#8696a0] focus-visible:border-[#25d366] focus-visible:ring-[#25d366]/25"
               />
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className="text-muted-foreground">
-                {t("emailLabel")}
+              <Label htmlFor="email" className="text-[#cbd5d9]">
+                {t('emailLabel')}
               </Label>
               <Input
                 id="email"
                 type="email"
-                placeholder={t("emailPlaceholder")}
+                placeholder={t('emailPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="border-[#2a3942] bg-[#202c33] text-[#e9edef] placeholder:text-[#8696a0] focus-visible:border-[#25d366] focus-visible:ring-[#25d366]/25"
               />
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="password" className="text-muted-foreground">
-                {t("passwordLabel")}
+              <Label htmlFor="password" className="text-[#cbd5d9]">
+                {t('passwordLabel')}
               </Label>
               <Input
                 id="password"
                 type="password"
-                placeholder={t("passwordPlaceholder")}
+                placeholder={t('passwordPlaceholder')}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="border-[#2a3942] bg-[#202c33] text-[#e9edef] placeholder:text-[#8696a0] focus-visible:border-[#25d366] focus-visible:ring-[#25d366]/25"
               />
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="confirmPassword" className="text-muted-foreground">
-                {t("confirmPasswordLabel")}
+              <Label htmlFor="confirmPassword" className="text-[#cbd5d9]">
+                {t('confirmPasswordLabel')}
               </Label>
               <Input
                 id="confirmPassword"
                 type="password"
-                placeholder={t("confirmPasswordPlaceholder")}
+                placeholder={t('confirmPasswordPlaceholder')}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                className="border-border bg-muted text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:ring-primary/20"
+                className="border-[#2a3942] bg-[#202c33] text-[#e9edef] placeholder:text-[#8696a0] focus-visible:border-[#25d366] focus-visible:ring-[#25d366]/25"
               />
             </div>
 
             <Button
               type="submit"
               disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="mt-2 h-12 w-full bg-[#25d366] font-semibold text-[#08210f] hover:bg-[#55e889] disabled:opacity-50"
             >
-              {loading ? t("creating") : t("submit")}
+              {loading ? t('creating') : t('submit')}
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            {t("haveAccount")}{" "}
+          <p className="mt-6 text-center text-sm text-[#8696a0]">
+            {t('haveAccount')}{' '}
             <Link
               href={
                 inviteToken
                   ? `/login?invite=${encodeURIComponent(inviteToken)}`
-                  : "/login"
+                  : '/login'
               }
-              className="text-primary hover:text-primary/80"
+              className="text-[#25d366] hover:text-[#55e889]"
             >
-              {t("signIn")}
+              {t('signIn')}
             </Link>
           </p>
         </CardContent>

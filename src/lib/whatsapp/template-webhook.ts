@@ -158,11 +158,12 @@ async function handleStatusUpdate(
     submission_error: null,
   }
 
-  const { data, error } = await supabase
+  let statusQuery = supabase
     .from('message_templates')
     .update(update)
-    .eq('meta_template_id', metaTemplateId)
-    .select('id')
+    .eq('meta_template_id', metaTemplateId);
+  if (wabaId) statusQuery = statusQuery.eq('waba_id', wabaId);
+  const { data, error } = await statusQuery.select('id')
 
   if (error) {
     console.error(
@@ -180,12 +181,14 @@ async function handleStatusUpdate(
       language: value.message_template_language,
       wabaId,
       fields: update,
-      retryUpdate: () =>
-        supabase
+      retryUpdate: () => {
+        let query = supabase
           .from('message_templates')
           .update(update)
-          .eq('meta_template_id', metaTemplateId)
-          .select('id'),
+          .eq('meta_template_id', metaTemplateId);
+        if (wabaId) query = query.eq('waba_id', wabaId);
+        return query.select('id');
+      },
       supabase,
     })
     return
@@ -221,12 +224,14 @@ async function handleQualityUpdate(
       : null
 
   const update = { quality_score: score }
-  const runUpdate = () =>
-    supabase
+  const runUpdate = () => {
+    let query = supabase
       .from('message_templates')
       .update(update)
-      .eq('meta_template_id', metaTemplateId)
-      .select('id')
+      .eq('meta_template_id', metaTemplateId);
+    if (wabaId) query = query.eq('waba_id', wabaId);
+    return query.select('id');
+  }
 
   const { data, error } = await runUpdate()
 
@@ -315,9 +320,10 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
     return
   }
   const rows = (configs ?? []) as { account_id: string; user_id: string }[]
-  if (rows.length !== 1) {
+  const accountIds = new Set(rows.map((row) => row.account_id))
+  if (accountIds.size !== 1) {
     console.warn(
-      `[template-webhook] ${kind} for unknown template ${where} — ${rows.length === 0 ? 'no' : rows.length} whatsapp_config rows match that WABA id; not creating a stub. Run "Sync from Meta" for the owning account.`,
+      `[template-webhook] ${kind} for unknown template ${where} — ${accountIds.size === 0 ? 'no' : accountIds.size} accounts match that WABA id; not creating a stub. Run "Sync from Meta" for the owning account.`,
     )
     return
   }
@@ -330,6 +336,7 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
   const stub = {
     account_id: config.account_id,
     user_id: config.user_id,
+    waba_id: wabaId,
     meta_template_id: metaTemplateId,
     name,
     language: p.language || DEFAULT_TEMPLATE_LANGUAGE,

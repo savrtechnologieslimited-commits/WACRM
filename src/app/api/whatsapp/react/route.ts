@@ -66,7 +66,7 @@ export async function POST(request: Request) {
 
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, account_id, contact:contacts(phone, wa_user_id)')
+      .select('id, account_id, channel_phone_number_id, contact:contacts(phone, wa_user_id)')
       .eq('id', targetMessage.conversation_id)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -92,11 +92,17 @@ export async function POST(request: Request) {
     }
 
     // WhatsApp config + access token. Account-scoped post-multi-user.
-    const { data: config, error: configError } = await supabase
+    let configQuery = supabase
       .from('whatsapp_config')
       .select('phone_number_id, access_token')
-      .eq('account_id', accountId)
-      .single();
+      .eq('account_id', accountId);
+    configQuery = conversation.channel_phone_number_id
+      ? configQuery.eq(
+          'phone_number_id',
+          conversation.channel_phone_number_id,
+        )
+      : configQuery.eq('is_primary', true);
+    const { data: config, error: configError } = await configQuery.single();
 
     if (configError || !config) {
       return NextResponse.json(

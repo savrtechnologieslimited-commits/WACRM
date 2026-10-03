@@ -100,6 +100,8 @@ export interface Contact {
   id: string;
   user_id: string;
   account_id: string;
+  /** Meta phone-number id that owns this contact's inbox identity. */
+  channel_phone_number_id?: string | null;
   /** Empty string for a contact Meta only ever identified by BSUID —
    *  see `wa_user_id`. */
   phone: string;
@@ -172,6 +174,8 @@ export interface Conversation {
   id: string;
   user_id: string;
   contact_id: string;
+  /** Meta phone-number id that owns this conversation. */
+  channel_phone_number_id?: string | null;
   status: ConversationStatus;
   assigned_agent_id?: string;
   last_message_text?: string;
@@ -295,6 +299,8 @@ export interface WhatsAppConfig {
   id: string;
   user_id: string;
   phone_number_id: string;
+  display_phone_number?: string | null;
+  is_primary?: boolean;
   waba_id?: string;
   access_token: string;
   verify_token?: string;
@@ -347,6 +353,7 @@ export interface TemplateSampleValues {
 export interface MessageTemplate {
   id: string;
   user_id: string;
+  waba_id?: string | null;
   name: string;
   category: 'Marketing' | 'Utility' | 'Authentication';
   language?: string;
