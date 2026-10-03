@@ -42,12 +42,12 @@ BEGIN
     RAISE EXCEPTION 'public.accounts is missing — migration 017 did not apply';
   END IF;
 
-  -- The BSUID index (040) is the only thing stopping a username-only
-  -- WhatsApp sender from forking a new contact per inbound message. A
-  -- typo in its name would apply cleanly and guarantee nothing.
-  IF to_regclass('public.idx_contacts_account_wa_user_id') IS NULL THEN
+  -- Migrations 040/043 scope BSUID identity by WhatsApp sender. A
+  -- username-only contact must remain unique within its number without
+  -- colliding with the same customer on another connected number.
+  IF to_regclass('public.idx_contacts_account_channel_wa_user_id') IS NULL THEN
     RAISE EXCEPTION
-      'idx_contacts_account_wa_user_id is missing — migration 040 did not apply';
+      'idx_contacts_account_channel_wa_user_id is missing — migration 043 did not apply';
   END IF;
 
   -- 041 repairs create_broadcast_with_recipients, which 037/038 shipped
