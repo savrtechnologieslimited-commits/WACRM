@@ -7,6 +7,7 @@ import {
   InvalidBridgeTokenError,
   verifyWacrmBridgeToken,
 } from '@/lib/auth/bridge-token';
+import { createBridgeCompleteResponse } from '@/lib/auth/bridge-complete-response';
 import { consumeBridgeNonce } from '@/lib/auth/consume-bridge-nonce';
 
 export const dynamic = 'force-dynamic';
@@ -144,10 +145,8 @@ export async function POST(request: NextRequest) {
     return bridgeError('WACRM could not create a sign-in session.', 500);
   }
 
-  const response = NextResponse.redirect(
+  return createBridgeCompleteResponse(
     new URL('/dashboard', request.url),
-    303
+    claims.issuer
   );
-  response.headers.set('Cache-Control', 'no-store');
-  return response;
 }
