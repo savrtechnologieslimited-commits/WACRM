@@ -1,4 +1,8 @@
 {
+  "AccessRequired": {
+    "title": "Abra o WACRM pelo Travel CRM",
+    "description": "O WACRM está disponível pelo Travel CRM da sua empresa. Volte ao CRM e abra o WhatsApp CRM pelo menu de navegação. O login direto está desativado."
+  },
   "LoginPage": {
     "titleAccept": "Entre para aceitar",
     "titleWelcome": "Bem-vindo de volta",

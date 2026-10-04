@@ -44,23 +44,22 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  // Auth pages - redirect to dashboard if already logged in.
-  // Exception: when an invite token is in the query string we
-  // send the already-signed-in user to /join/<token> instead so
-  // they can accept the invitation in one click. Without this,
-  // a forwarded invite link to someone who's already signed in
-  // would silently drop them on /dashboard.
-  if (user && (
-    request.nextUrl.pathname === '/login' ||
-    request.nextUrl.pathname === '/signup' ||
-    request.nextUrl.pathname === '/forgot-password'
-  )) {
+  const authPaths = ['/login', '/signup', '/forgot-password', '/reset-password']
+  if (authPaths.includes(request.nextUrl.pathname)) {
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/access-required'
+      url.search = ''
+      return withRefreshedCookies(NextResponse.redirect(url))
+    }
+
+    // Preserve invite acceptance for an already-authenticated user
+    // following a legacy login or signup link.
     const url = request.nextUrl.clone()
     const inviteToken = request.nextUrl.searchParams.get('invite')
     if (
       inviteToken &&
-      (request.nextUrl.pathname === '/login' ||
-        request.nextUrl.pathname === '/signup')
+      (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')
     ) {
       url.pathname = `/join/${encodeURIComponent(inviteToken)}`
       url.search = ''
@@ -71,13 +70,13 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
-  // Protected pages - redirect to login if not authenticated
+  // Protected pages are available only through the CRM SSO bridge.
   // Every top-level route under src/app/(dashboard)/ belongs here —
   // middleware.test.ts reads that directory and fails on a missing one.
   const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/flows', '/agents', '/notifications', '/settings']
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
+    url.pathname = '/access-required'
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 

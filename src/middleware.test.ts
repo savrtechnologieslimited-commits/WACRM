@@ -89,7 +89,7 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
   });
 
-  it("carries the rotated token when redirecting an unauth user to /login", async () => {
+  it("carries the rotated token when redirecting an unauth user to /access-required", async () => {
     mockUser = null;
     // Even on the logged-out path getUser() may emit cookie writes (e.g.
     // clearing a dead session); those must not be dropped on the redirect.
@@ -100,7 +100,7 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     );
 
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/login");
+    expect(res.headers.get("location")).toContain("/access-required");
     expect(res.cookies.get(ROTATED.name)?.value).toBe("cleared");
   });
 
@@ -145,12 +145,24 @@ describe("middleware — every dashboard route requires a session", () => {
     expect(dashboardRoutes).toContain("/dashboard");
   });
 
-  it.each(dashboardRoutes)("redirects a signed-out visitor from %s to /login", async (route) => {
+  it.each(dashboardRoutes)("redirects a signed-out visitor from %s to /access-required", async (route) => {
     mockUser = null;
 
     const res = await middleware(new NextRequest(`https://app.test${route}`));
 
     expect(res.status).toBe(307);
-    expect(new URL(res.headers.get("location")!).pathname).toBe("/login");
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/access-required");
   });
 });
+
+describe("middleware — legacy authentication pages require CRM access", () => {
+  it.each(["/login", "/signup", "/forgot-password", "/reset-password"])(
+    "redirects signed-out visitors from %s to /access-required",
+    async (path) => {
+      const res = await middleware(new NextRequest(`https://app.test${path}`))
+
+      expect(res.status).toBe(307)
+      expect(new URL(res.headers.get("location")!).pathname).toBe("/access-required")
+    }
+  )
+})

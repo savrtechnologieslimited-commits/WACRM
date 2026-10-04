@@ -13,7 +13,6 @@ import {
   Crown,
   GitBranch,
   LayoutDashboard,
-  LogOut,
   MessageSquare,
   Radio,
   Settings,
@@ -74,7 +73,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -116,7 +114,7 @@ import { useTranslations } from "next-intl";
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const { profile, profileLoading, account, accountRole } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   // Only surface the account-name strip when it actually carries
@@ -383,14 +381,6 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               >
                 <Settings className="size-4" />
                 {t("menuSettings")}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator className="bg-border" />
-              <DropdownMenuItem
-                onClick={signOut}
-                className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
-              >
-                <LogOut className="size-4" />
-                {t("menuSignOut")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

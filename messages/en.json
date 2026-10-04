@@ -1,4 +1,8 @@
 {
+  "AccessRequired": {
+    "title": "Open WACRM from Travel CRM",
+    "description": "WACRM is available through your company's Travel CRM. Return to the CRM and open WhatsApp CRM from its navigation. Direct sign-in is disabled."
+  },
   "LoginPage": {
     "titleAccept": "Sign in to accept",
     "titleWelcome": "Welcome back",

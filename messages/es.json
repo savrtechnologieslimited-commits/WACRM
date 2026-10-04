@@ -1,4 +1,8 @@
 {
+  "AccessRequired": {
+    "title": "Abre WACRM desde Travel CRM",
+    "description": "WACRM está disponible a través del Travel CRM de tu empresa. Vuelve al CRM y abre WhatsApp CRM desde su menú de navegación. El inicio de sesión directo está desactivado."
+  },
   "LoginPage": {
     "titleAccept": "Inicia sesión para aceptar",
     "titleWelcome": "Bienvenido de nuevo",

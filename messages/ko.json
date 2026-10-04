@@ -1,4 +1,8 @@
 {
+  "AccessRequired": {
+    "title": "Travel CRM에서 WACRM 열기",
+    "description": "WACRM은 회사의 Travel CRM을 통해 사용할 수 있습니다. CRM으로 돌아가 탐색 메뉴에서 WhatsApp CRM을 여세요. 직접 로그인은 비활성화되어 있습니다."
+  },
   "LoginPage": {
     "titleAccept": "로그인하여 수락하기",
     "titleWelcome": "다시 오신 것을 환영합니다",
