@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
@@ -18,15 +18,51 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const t = useTranslations("DashboardShell");
-  const readySignalSentRef = useRef(false);
 
   useEffect(() => {
-    if (loading || !user || readySignalSentRef.current) return;
-
-    if (window.parent !== window) {
-      window.parent.postMessage({ type: "wacrm:dashboard-ready" }, "*");
+    if (loading || !user || typeof window === "undefined" || window.parent === window) {
+      return;
     }
-    readySignalSentRef.current = true;
+
+    let acknowledged = false;
+    let parentOrigin = "*";
+    try {
+      parentOrigin = new URL(document.referrer).origin;
+    } catch {
+      // The parent validates the WACRM origin and frame source if no referrer is available.
+    }
+
+    const handleParentMessage = (event: MessageEvent<unknown>) => {
+      if (
+        event.source !== window.parent ||
+        (parentOrigin !== "*" && event.origin !== parentOrigin) ||
+        !event.data ||
+        typeof event.data !== "object" ||
+        !("type" in event.data) ||
+        event.data.type !== "wacrm:dashboard-ready-ack"
+      ) {
+        return;
+      }
+      acknowledged = true;
+    };
+    const sendReadySignal = () => {
+      if (!acknowledged) {
+        window.parent.postMessage({ type: "wacrm:dashboard-ready" }, parentOrigin);
+      }
+    };
+
+    window.addEventListener("message", handleParentMessage);
+    sendReadySignal();
+    const retryInterval = window.setInterval(sendReadySignal, 500);
+    const retryTimeout = window.setTimeout(() => {
+      window.clearInterval(retryInterval);
+    }, 10_000);
+
+    return () => {
+      window.removeEventListener("message", handleParentMessage);
+      window.clearInterval(retryInterval);
+      window.clearTimeout(retryTimeout);
+    };
   }, [loading, user]);
 
   // Sidebar drawer state — only used on mobile. On lg+ the sidebar is
