@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowLeft, CheckCheck, MessageCircle, Send, Sparkles } from 'lucide-react';
+import { ArrowLeft, CheckCheck, MessageCircle, Send } from 'lucide-react';
 import { DEMO_WHATSAPP_NUMBERS } from '@/lib/whatsapp/demo-data';
 import { cn } from '@/lib/utils';
 
@@ -111,10 +111,6 @@ export function DemoInbox() {
 
   return (
     <section className="flex h-[calc(100vh-3.5rem)] min-h-[520px] flex-col overflow-hidden rounded-xl border border-border bg-card">
-      <div className="flex shrink-0 items-center gap-2 border-b border-emerald-500/20 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-300">
-        <Sparkles className="size-4" />
-        Demo inbox — messages and numbers here are examples. Sending is simulated only.
-      </div>
       <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-border px-3 py-2">
         <button
           type="button"
