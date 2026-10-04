@@ -17,6 +17,7 @@ let refreshedCookies: Array<{
   options: Record<string, unknown>;
 }> = [];
 let configuredCookieOptions: Record<string, unknown> | undefined;
+let getUserCalls = 0;
 
 vi.mock("@supabase/ssr", () => ({
   createServerClient: (
@@ -34,6 +35,7 @@ vi.mock("@supabase/ssr", () => ({
         // refreshed inside getUser(), which rotates the refresh token and
         // pushes the new cookies through setAll() before resolving.
         getUser: async () => {
+          getUserCalls += 1;
           if (refreshedCookies.length) opts.cookies.setAll(refreshedCookies);
           return { data: { user: mockUser } };
         },
@@ -51,6 +53,7 @@ beforeEach(() => {
   mockUser = null;
   refreshedCookies = [];
   configuredCookieOptions = undefined;
+  getUserCalls = 0;
 });
 
 afterEach(() => vi.clearAllMocks());
@@ -62,6 +65,15 @@ const ROTATED = {
 };
 
 describe("middleware — refreshed auth cookies survive redirects", () => {
+  it("lets the bridge replace a stale session without refreshing it first", async () => {
+    const res = await middleware(
+      new NextRequest("https://app.test/auth/bridge", { method: "POST" }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(getUserCalls).toBe(0);
+  });
+
   it("configures partitioned cookies for embedded sessions", async () => {
     await middleware(new NextRequest("https://app.test/dashboard"));
 

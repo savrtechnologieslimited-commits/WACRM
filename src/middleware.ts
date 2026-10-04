@@ -3,6 +3,12 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { supabaseCookieOptions } from './lib/supabase/cookie-options'
 
 export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname === '/auth/bridge') {
+    // The bridge issues a fresh session. Refreshing an old session here can
+    // consume or clear cookies before the bridge response replaces them.
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
