@@ -25,17 +25,9 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
     }
 
     let acknowledged = false;
-    let parentOrigin = "*";
-    try {
-      parentOrigin = new URL(document.referrer).origin;
-    } catch {
-      // The parent validates the WACRM origin and frame source if no referrer is available.
-    }
-
     const handleParentMessage = (event: MessageEvent<unknown>) => {
       if (
         event.source !== window.parent ||
-        (parentOrigin !== "*" && event.origin !== parentOrigin) ||
         !event.data ||
         typeof event.data !== "object" ||
         !("type" in event.data) ||
@@ -47,7 +39,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
     };
     const sendReadySignal = () => {
       if (!acknowledged) {
-        window.parent.postMessage({ type: "wacrm:dashboard-ready" }, parentOrigin);
+        window.parent.postMessage({ type: "wacrm:dashboard-ready" }, "*");
       }
     };
 
