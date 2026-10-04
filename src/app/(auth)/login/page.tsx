@@ -40,6 +40,11 @@ function LoginPageInner() {
   // Set by /auth/callback when an emailed link (confirmation, password
   // reset) could not be turned into a session — see src/lib/auth/callback.ts.
   const linkError = searchParams.get('error');
+  const next = searchParams.get('next');
+  const nextDestination =
+    next?.startsWith('/') && !next.startsWith('//') && !next.includes('\\')
+      ? next
+      : null;
   const linkErrorMessage =
     linkError === 'link_expired'
       ? t('linkExpired')
@@ -79,7 +84,7 @@ function LoginPageInner() {
     // reload the invite-accept flow already uses in join/[token].
     const destination = inviteToken
       ? `/join/${encodeURIComponent(inviteToken)}`
-      : '/dashboard';
+      : nextDestination ?? '/dashboard';
     window.location.href = destination;
   };
 
@@ -164,19 +169,17 @@ function LoginPageInner() {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-[#8696a0]">
-            {t('noAccount')}{' '}
-            <Link
-              href={
-                inviteToken
-                  ? `/signup?invite=${encodeURIComponent(inviteToken)}`
-                  : '/signup'
-              }
-              className="text-[#25d366] hover:text-[#55e889]"
-            >
-              {t('createAccount')}
-            </Link>
-          </p>
+          {inviteToken ? (
+            <p className="mt-6 text-center text-sm text-[#8696a0]">
+              {t('noAccount')}{' '}
+              <Link
+                href={`/signup?invite=${encodeURIComponent(inviteToken)}`}
+                className="text-[#25d366] hover:text-[#55e889]"
+              >
+                {t('createAccount')}
+              </Link>
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

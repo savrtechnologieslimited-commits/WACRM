@@ -101,7 +101,7 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
   });
 
-  it("carries the rotated token when redirecting an unauth user to /access-required", async () => {
+  it("carries the rotated token when redirecting an unauth user to /login", async () => {
     mockUser = null;
     // Even on the logged-out path getUser() may emit cookie writes (e.g.
     // clearing a dead session); those must not be dropped on the redirect.
@@ -112,7 +112,7 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     );
 
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toContain("/access-required");
+    expect(res.headers.get("location")).toContain("/login?next=%2Fdashboard");
     expect(res.cookies.get(ROTATED.name)?.value).toBe("cleared");
   });
 
@@ -157,24 +157,63 @@ describe("middleware — every dashboard route requires a session", () => {
     expect(dashboardRoutes).toContain("/dashboard");
   });
 
-  it.each(dashboardRoutes)("redirects a signed-out visitor from %s to /access-required", async (route) => {
+  it.each(dashboardRoutes)("redirects a signed-out visitor from %s to /login", async (route) => {
     mockUser = null;
 
-    const res = await middleware(new NextRequest(`https://app.test${route}`));
+    const res = await middleware(
+      new NextRequest(`https://app.test${route}?contact=contact-123`),
+    );
 
     expect(res.status).toBe(307);
-    expect(new URL(res.headers.get("location")!).pathname).toBe("/access-required");
+    const redirect = new URL(res.headers.get("location")!);
+    expect(redirect.pathname).toBe("/login");
+    expect(redirect.searchParams.get("next")).toBe(
+      `${route}?contact=contact-123`,
+    );
   });
 });
 
-describe("middleware — legacy authentication pages require CRM access", () => {
-  it.each(["/login", "/signup", "/forgot-password", "/reset-password"])(
-    "redirects signed-out visitors from %s to /access-required",
+describe("middleware — embedded sign-in and account recovery", () => {
+  it.each(["/login", "/forgot-password", "/reset-password"])(
+    "allows signed-out visitors to open %s",
     async (path) => {
       const res = await middleware(new NextRequest(`https://app.test${path}`))
 
-      expect(res.status).toBe(307)
-      expect(new URL(res.headers.get("location")!).pathname).toBe("/access-required")
+      expect(res.status).toBe(200)
+      expect(res.headers.get("location")).toBeNull()
     }
   )
+
+  it("does not allow public account creation without a WACRM invitation", async () => {
+    const res = await middleware(new NextRequest("https://app.test/signup"))
+
+    expect(res.status).toBe(307)
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/login")
+  })
+
+  it("preserves the requested CRM destination after an existing user signs in", async () => {
+    mockUser = { id: "user-1" }
+
+    const res = await middleware(
+      new NextRequest(
+        "https://app.test/login?next=%2Finbox%3Fcontact%3Dcontact-123",
+      ),
+    )
+
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/inbox")
+    expect(new URL(res.headers.get("location")!).searchParams.get("contact")).toBe(
+      "contact-123",
+    )
+  })
+
+  it("does not redirect sign-in to an external destination", async () => {
+    mockUser = { id: "user-1" }
+
+    const res = await middleware(
+      new NextRequest("https://app.test/login?next=https%3A%2F%2Fevil.test"),
+    )
+
+    expect(new URL(res.headers.get("location")!).origin).toBe("https://app.test")
+    expect(new URL(res.headers.get("location")!).pathname).toBe("/dashboard")
+  })
 })

@@ -64,7 +64,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push("/access-required");
+      router.push("/login");
     }
   }, [user, loading, router]);
 

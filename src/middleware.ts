@@ -53,36 +53,55 @@ export async function middleware(request: NextRequest) {
   const authPaths = ['/login', '/signup', '/forgot-password', '/reset-password']
   if (authPaths.includes(request.nextUrl.pathname)) {
     if (!user) {
+      if (
+        request.nextUrl.pathname !== '/signup' ||
+        request.nextUrl.searchParams.has('invite')
+      ) {
+        return supabaseResponse
+      }
+
       const url = request.nextUrl.clone()
-      url.pathname = '/access-required'
+      url.pathname = '/login'
       url.search = ''
       return withRefreshedCookies(NextResponse.redirect(url))
     }
 
-    // Preserve invite acceptance for an already-authenticated user
-    // following a legacy login or signup link.
     const url = request.nextUrl.clone()
     const inviteToken = request.nextUrl.searchParams.get('invite')
     if (
       inviteToken &&
-      (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/signup')
+      (request.nextUrl.pathname === '/login' ||
+        request.nextUrl.pathname === '/signup')
     ) {
       url.pathname = `/join/${encodeURIComponent(inviteToken)}`
       url.search = ''
     } else {
-      url.pathname = '/dashboard'
-      url.search = ''
+      const next = request.nextUrl.searchParams.get('next')
+      const destination = next ? new URL(next, request.nextUrl.origin) : null
+      url.pathname =
+        destination?.origin === request.nextUrl.origin
+          ? destination.pathname
+          : '/dashboard'
+      url.search =
+        destination?.origin === request.nextUrl.origin
+          ? destination.search
+          : ''
     }
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
-  // Protected pages are available only through the CRM SSO bridge.
+  // Protected pages require a WACRM session established in the embedded login.
   // Every top-level route under src/app/(dashboard)/ belongs here —
   // middleware.test.ts reads that directory and fails on a missing one.
   const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/flows', '/agents', '/notifications', '/settings']
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
-    url.pathname = '/access-required'
+    url.pathname = '/login'
+    url.search = ''
+    url.searchParams.set(
+      'next',
+      `${request.nextUrl.pathname}${request.nextUrl.search}`,
+    )
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
