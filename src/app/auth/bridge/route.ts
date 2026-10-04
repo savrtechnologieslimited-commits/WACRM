@@ -132,7 +132,11 @@ export async function POST(request: NextRequest) {
     return bridgeError('WACRM could not create a sign-in session.', 500);
   }
 
-  const supabase = await createClient();
+  const completionResponse = createBridgeCompleteResponse(
+    new URL('/dashboard', request.url),
+    claims.issuer
+  );
+  const supabase = await createClient(completionResponse);
   const { error: sessionError } = await supabase.auth.verifyOtp({
     token_hash: tokenHash,
     type: 'magiclink',
@@ -145,8 +149,5 @@ export async function POST(request: NextRequest) {
     return bridgeError('WACRM could not create a sign-in session.', 500);
   }
 
-  return createBridgeCompleteResponse(
-    new URL('/dashboard', request.url),
-    claims.issuer
-  );
+  return completionResponse;
 }
