@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -15,7 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { MessageSquare, UsersRound } from 'lucide-react';
+import { UsersRound } from 'lucide-react';
 
 // `useSearchParams` opts the component out of static prerendering
 // unless it sits under a Suspense boundary. We split the form into
@@ -95,13 +96,24 @@ function LoginPageInner() {
       <Card className="relative w-full max-w-lg overflow-hidden rounded-2xl border-[#26343b] bg-[#111b21] text-[#e9edef] shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
         <div className="absolute inset-x-0 top-0 h-1 bg-[#25d366]" />
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#25d366]/10">
-            {inviteToken ? (
-              <UsersRound className="h-6 w-6 text-[#25d366]" />
-            ) : (
-              <MessageSquare className="h-6 w-6 text-[#25d366]" />
-            )}
+          <div className="mb-3 w-full max-w-[280px] overflow-hidden rounded-xl bg-white p-2">
+            <Image
+              src="/savr-technologies-logo.png"
+              alt="SAVR Technologies"
+              width={1440}
+              height={490}
+              priority
+              className="h-auto w-full"
+            />
           </div>
+          <p className="mb-2 text-xs font-medium uppercase tracking-[0.2em] text-[#8696a0]">
+            WhatsApp CRM
+          </p>
+          {inviteToken && (
+            <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-[#25d366]/10">
+              <UsersRound className="h-5 w-5 text-[#25d366]" />
+            </div>
+          )}
           <CardTitle className="text-2xl font-semibold tracking-tight text-[#e9edef]">
             {inviteToken ? t('titleAccept') : t('titleWelcome')}
           </CardTitle>
