@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
@@ -18,6 +18,16 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
   const t = useTranslations("DashboardShell");
+  const readySignalSentRef = useRef(false);
+
+  useEffect(() => {
+    if (loading || !user || readySignalSentRef.current) return;
+
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: "wacrm:dashboard-ready" }, "*");
+    }
+    readySignalSentRef.current = true;
+  }, [loading, user]);
 
   // Sidebar drawer state — only used on mobile. On lg+ the sidebar is
   // always visible and this stays at `false` (ignored by the component).
