@@ -24,12 +24,12 @@ export function createBridgeCompleteResponse(
           if (
             event.source === window.parent &&
             event.origin === parentOrigin &&
-            event.data?.type === 'wacrm:dashboard-ready-ack'
+            event.data?.type === 'wacrm:bridge-complete-ack'
           ) {
             navigate();
           }
         });
-        window.parent.postMessage({ type: 'wacrm:dashboard-ready' }, parentOrigin);
+        window.parent.postMessage({ type: 'wacrm:bridge-complete' }, parentOrigin);
         window.setTimeout(navigate, 1500);
       })();
     </script>

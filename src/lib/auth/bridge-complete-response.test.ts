@@ -13,7 +13,8 @@ describe('createBridgeCompleteResponse', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('no-store');
     expect(response.headers.get('content-type')).toContain('text/html');
-    expect(html).toContain("window.parent.postMessage({ type: 'wacrm:dashboard-ready' }");
+    expect(html).toContain("window.parent.postMessage({ type: 'wacrm:bridge-complete' }");
+    expect(html).toContain("event.data?.type === 'wacrm:bridge-complete-ack'");
     expect(html).toContain("event.origin === parentOrigin");
     expect(html).toContain('"/inbox?contact=contact-123"');
   });
