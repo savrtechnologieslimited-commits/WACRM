@@ -239,3 +239,39 @@ html[data-theme="rose"] {
     opacity: 0 !important;
   }
 }
+
+html[data-mode="light"] .status-chip-success {
+  border-color: oklch(0.78 0.09 155);
+  background-color: oklch(0.94 0.04 155);
+  color: oklch(0.38 0.12 155);
+}
+
+html[data-mode="light"] .status-chip-warning {
+  border-color: oklch(0.82 0.12 80);
+  background-color: oklch(0.96 0.05 90);
+  color: oklch(0.43 0.12 70);
+}
+
+html[data-mode="light"] .status-alert-success {
+  border-color: oklch(0.78 0.09 155 / 70%);
+  background-color: oklch(0.95 0.025 155);
+}
+
+html[data-mode="light"] .status-alert-warning {
+  border-color: oklch(0.78 0.1 75 / 75%);
+  background-color: oklch(0.96 0.035 85);
+}
+
+html[data-mode="light"] .status-text-success,
+html[data-mode="light"] .status-icon-success {
+  color: oklch(0.4 0.13 155);
+}
+
+html[data-mode="light"] .status-text-warning,
+html[data-mode="light"] .status-icon-warning {
+  color: oklch(0.45 0.13 68);
+}
+
+html[data-mode="light"] .status-text-danger {
+  color: oklch(0.48 0.18 28);
+}

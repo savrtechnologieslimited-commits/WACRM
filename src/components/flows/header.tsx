@@ -186,7 +186,7 @@ function StatusChip({ status }: { status: BuilderState["status"] }) {
       label: t("statusDraft"),
     },
     active: {
-      cls: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
+      cls: "status-chip-success border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
       label: t("statusActive"),
     },
     archived: {

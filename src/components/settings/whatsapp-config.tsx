@@ -749,20 +749,23 @@ export function WhatsAppConfig() {
           <Alert
             className={
               isRegistered
-                ? 'bg-emerald-950/30 border-emerald-700/50'
-                : 'bg-amber-950/30 border-amber-700/50'
+                ? 'status-alert-success bg-emerald-950/30 border-emerald-700/50'
+                : 'status-alert-warning bg-amber-950/30 border-amber-700/50'
             }
           >
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
                 {isRegistered ? (
-                  <CheckCircle2 className="size-4 text-emerald-400" />
+                  <CheckCircle2 className="status-icon-success size-4 text-emerald-400" />
                 ) : (
-                  <AlertTriangle className="size-4 text-amber-400" />
+                  <AlertTriangle className="status-icon-warning size-4 text-amber-400" />
                 )}
                 <AlertTitle
                   className={
-                    'mb-0 ' + (isRegistered ? 'text-emerald-200' : 'text-amber-200')
+                    'mb-0 ' +
+                    (isRegistered
+                      ? 'status-text-success text-emerald-200'
+                      : 'status-text-warning text-amber-200')
                   }
                 >
                   {isRegistered
@@ -799,7 +802,7 @@ export function WhatsAppConfig() {
               ) : lastRegistrationError ? (
                 <>
                   {t('lastAttemptFailed')}
-                  <span className="text-red-300">
+                  <span className="status-text-danger text-red-300">
                     &quot;{lastRegistrationError}&quot;
                   </span>
                   . {t('retryHint')}
