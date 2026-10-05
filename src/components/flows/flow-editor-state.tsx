@@ -166,6 +166,40 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
         filename: "",
         next_node_key: "",
       };
+    case "travel_crm_get_destinations":
+      return {
+        travel_type: "domestic",
+        result_var: "destinations",
+        error_var: "travel_crm_error",
+        success_next_node_key: "",
+        error_next_node_key: "",
+      };
+    case "travel_crm_get_destination":
+      return {
+        destination_id_var: "selected_destination_id",
+        travel_type_var: "travel_type",
+        result_var: "destination",
+        error_var: "travel_crm_error",
+        success_next_node_key: "",
+        error_next_node_key: "",
+      };
+    case "travel_crm_complete_enquiry":
+      return {
+        variable_map: {
+          customer_name: "customer_name",
+          travel_date: "travel_date",
+          adults: "adults",
+          children: "children",
+          departure_city: "departure_city",
+          budget: "budget",
+          special_requirements: "special_requirements",
+        },
+        destination_var: "destination",
+        result_var: "crm_enquiry",
+        error_var: "travel_crm_error",
+        success_next_node_key: "",
+        error_next_node_key: "",
+      };
     case "collect_input":
       return {
         prompt_text: "",
