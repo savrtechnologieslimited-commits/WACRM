@@ -18,14 +18,12 @@
 
 import {
   Flag,
-  Globe,
   GitFork,
   Inbox,
   ListChecks,
   ListPlus,
   MessageCircle,
   Paperclip,
-  MapPin,
   PlayCircle,
   Tag,
   UserPlus,
@@ -51,9 +49,6 @@ export type NodeType =
   | 'collect_input'
   | 'condition'
   | 'set_tag'
-  | 'travel_crm_get_destinations'
-  | 'travel_crm_get_destination'
-  | 'travel_crm_complete_enquiry'
   | 'handoff'
   | 'end';
 
@@ -84,15 +79,10 @@ export interface BuilderNode {
 // the canvas, so `start` is just the entry point under Flow control.
 // ------------------------------------------------------------
 
-export type NodeCategory = 'messaging' | 'logic' | 'integration' | 'flow';
+export type NodeCategory = 'messaging' | 'logic' | 'flow';
 
 /** The order categories render in the add-step menu. */
-export const NODE_CATEGORIES: NodeCategory[] = [
-  'messaging',
-  'logic',
-  'integration',
-  'flow',
-];
+export const NODE_CATEGORIES: NodeCategory[] = ['messaging', 'logic', 'flow'];
 
 export const NODE_META: Record<
   NodeType,
@@ -142,24 +132,6 @@ export const NODE_META: Record<
     icon: Inbox,
     color: 'text-teal-400',
     category: 'logic',
-  },
-  travel_crm_get_destinations: {
-    slugSeed: 'Travel CRM Get Destinations',
-    icon: Globe,
-    color: 'text-emerald-400',
-    category: 'integration',
-  },
-  travel_crm_get_destination: {
-    slugSeed: 'Travel CRM Get Destination',
-    icon: MapPin,
-    color: 'text-cyan-400',
-    category: 'integration',
-  },
-  travel_crm_complete_enquiry: {
-    slugSeed: 'Travel CRM Complete Enquiry',
-    icon: Workflow,
-    color: 'text-violet-400',
-    category: 'integration',
   },
   condition: {
     slugSeed: 'If / else',
@@ -223,9 +195,6 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   collect_input: { l: 0.65, c: 0.1, h: 185 }, // teal — capture
   condition: { l: 0.72, c: 0.15, h: 65 }, // amber — a fork in the road
   set_tag: { l: 0.65, c: 0.15, h: 350 }, // pink
-  travel_crm_get_destinations: { l: 0.67, c: 0.14, h: 150 },
-  travel_crm_get_destination: { l: 0.66, c: 0.13, h: 205 },
-  travel_crm_complete_enquiry: { l: 0.62, c: 0.15, h: 300 },
   handoff: { l: 0.65, c: 0.17, h: 16 }, // rose — hands off
   end: { l: 0.55, c: 0.01, h: 260 }, // neutral grey — terminal
 };
@@ -356,9 +325,6 @@ export function summarizeNode(
       return titles || null;
     }
     case 'send_list': {
-      if (typeof cfg.dynamic_source_var === 'string' && cfg.dynamic_source_var) {
-        return `Dynamic options from vars.${cfg.dynamic_source_var}`;
-      }
       const text = typeof cfg.text === 'string' ? cfg.text : '';
       const sections = Array.isArray(cfg.sections)
         ? (cfg.sections as Array<Record<string, unknown>>)
@@ -388,9 +354,6 @@ export function summarizeNode(
         ? t ? t(mediaType) || (mediaType.charAt(0).toUpperCase() + mediaType.slice(1)) : mediaType.charAt(0).toUpperCase() + mediaType.slice(1)
         : t ? t('media') : 'Media';
       if (!url) return t ? t('noFile', { label }) : `${label} (no file uploaded)`;
-      if (url.includes('{{vars.') || url.includes('{{')) {
-        return `${label}: ${truncate(url, 50)}`;
-      }
       const name = filename || url.split('/').pop() || 'file';
       return caption
         ? `${label}: ${truncate(name, 30)} · ${truncate(caption, 40)}`
@@ -447,14 +410,6 @@ export function summarizeNode(
         ? t ? t('tagPicked', { mode, tag: tagId.slice(0, 8) }) : `${mode} tag ${tagId.slice(0, 8)}…`
         : t ? t('tagNone', { mode }) : `${mode} tag (none picked)`;
     }
-    case 'travel_crm_get_destinations':
-      return cfg.travel_type === 'international'
-        ? 'International destinations from Travel CRM'
-        : 'Domestic destinations from Travel CRM';
-    case 'travel_crm_get_destination':
-      return 'Destination details and PDF from Travel CRM';
-    case 'travel_crm_complete_enquiry':
-      return 'Create or update the canonical CRM enquiry';
     case 'handoff': {
       const note = typeof cfg.note === 'string' ? cfg.note : '';
       return note.length > 0 ? truncate(note) : null;

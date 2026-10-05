@@ -196,36 +196,6 @@ export function NodeConfigForm({
         />
       );
 
-    case "travel_crm_get_destinations":
-      return (
-        <TravelCrmGetDestinationsForm
-          cfg={cfg as TravelCrmGetDestinationsCfg}
-          allNodes={allNodes}
-          currentKey={node.node_key}
-          onUpdateConfig={onUpdateConfig}
-        />
-      );
-
-    case "travel_crm_get_destination":
-      return (
-        <TravelCrmGetDestinationForm
-          cfg={cfg as TravelCrmGetDestinationCfg}
-          allNodes={allNodes}
-          currentKey={node.node_key}
-          onUpdateConfig={onUpdateConfig}
-        />
-      );
-
-    case "travel_crm_complete_enquiry":
-      return (
-        <TravelCrmCompleteEnquiryForm
-          cfg={cfg as TravelCrmCompleteEnquiryCfg}
-          allNodes={allNodes}
-          currentKey={node.node_key}
-          onUpdateConfig={onUpdateConfig}
-        />
-      );
-
     case "handoff":
       return (
         <TextRow
@@ -243,224 +213,6 @@ export function NodeConfigForm({
         </p>
       );
   }
-}
-
-interface TravelCrmActionEdges {
-  result_var?: string;
-  error_var?: string;
-  success_next_node_key?: string;
-  error_next_node_key?: string;
-}
-
-interface TravelCrmGetDestinationsCfg extends TravelCrmActionEdges {
-  travel_type?: "domestic" | "international";
-}
-
-interface TravelCrmGetDestinationCfg extends TravelCrmActionEdges {
-  destination_id_var?: string;
-  travel_type_var?: string;
-}
-
-interface TravelCrmCompleteEnquiryCfg extends TravelCrmActionEdges {
-  variable_map?: Record<string, string>;
-  destination_var?: string;
-}
-
-function TravelCrmGetDestinationsForm({
-  cfg,
-  allNodes,
-  currentKey,
-  onUpdateConfig,
-}: {
-  cfg: TravelCrmGetDestinationsCfg;
-  allNodes: BuilderNode[];
-  currentKey: string;
-  onUpdateConfig: (patch: Record<string, unknown>) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3">
-      <div>
-        <label className="mb-1 block text-xs text-muted-foreground">Travel type</label>
-        <Select
-          value={cfg.travel_type ?? "domestic"}
-          onValueChange={(value) =>
-            onUpdateConfig({ travel_type: value as "domestic" | "international" })
-          }
-        >
-          <SelectTrigger className="bg-muted"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="domestic">Domestic</SelectItem>
-            <SelectItem value="international">International</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <TravelCrmOutputFields
-        cfg={cfg}
-        allNodes={allNodes}
-        currentKey={currentKey}
-        onUpdateConfig={onUpdateConfig}
-      />
-    </div>
-  );
-}
-
-function TravelCrmGetDestinationForm({
-  cfg,
-  allNodes,
-  currentKey,
-  onUpdateConfig,
-}: {
-  cfg: TravelCrmGetDestinationCfg;
-  allNodes: BuilderNode[];
-  currentKey: string;
-  onUpdateConfig: (patch: Record<string, unknown>) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-3">
-      {(
-        [
-          ["Destination ID variable", "destination_id_var", "selected_destination_id"],
-          ["Travel type variable", "travel_type_var", "travel_type"],
-        ] as const
-      ).map(([label, key, placeholder]) => (
-        <div key={key}>
-          <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
-          <Input
-            value={cfg[key] ?? ""}
-            onChange={(event) => onUpdateConfig({ [key]: event.target.value.trim() })}
-            placeholder={placeholder}
-            className="bg-muted font-mono text-xs"
-          />
-        </div>
-      ))}
-      <TravelCrmOutputFields
-        cfg={cfg}
-        allNodes={allNodes}
-        currentKey={currentKey}
-        onUpdateConfig={onUpdateConfig}
-      />
-    </div>
-  );
-}
-
-function TravelCrmCompleteEnquiryForm({
-  cfg,
-  allNodes,
-  currentKey,
-  onUpdateConfig,
-}: {
-  cfg: TravelCrmCompleteEnquiryCfg;
-  allNodes: BuilderNode[];
-  currentKey: string;
-  onUpdateConfig: (patch: Record<string, unknown>) => void;
-}) {
-  const mappings = cfg.variable_map ?? {};
-  const fields = [
-    ["customer_name", "Customer name", "customer_name"],
-    ["travel_date", "Travel date", "travel_date"],
-    ["adults", "Adults", "adults"],
-    ["children", "Children", "children"],
-    ["departure_city", "Departure city", "departure_city"],
-    ["budget", "Budget", "budget"],
-    ["special_requirements", "Special requirements", "special_requirements"],
-    ["email", "Email (optional)", "email"],
-    ["whatsapp_number", "WhatsApp number (defaults to contact)", "whatsapp_number"],
-  ] as const;
-  const updateMap = (key: string, value: string) =>
-    onUpdateConfig({
-      variable_map: { ...mappings, [key]: value.replace(/[^a-zA-Z0-9_]/g, "") },
-    });
-
-  return (
-    <div className="grid grid-cols-1 gap-3">
-      <p className="text-xs text-muted-foreground">
-        Destination and employee assignment are taken from the verified Travel CRM response, not from customer text.
-      </p>
-      <div>
-        <label className="mb-1 block text-xs text-muted-foreground">Destination result variable</label>
-        <Input
-          value={cfg.destination_var ?? ""}
-          onChange={(event) =>
-            onUpdateConfig({ destination_var: event.target.value.replace(/[^a-zA-Z0-9_]/g, "") })
-          }
-          placeholder="destination"
-          className="bg-muted font-mono text-xs"
-        />
-      </div>
-      {fields.map(([key, label, placeholder]) => (
-        <div key={key}>
-          <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
-          <Input
-            value={mappings[key] ?? ""}
-            onChange={(event) => updateMap(key, event.target.value)}
-            placeholder={placeholder}
-            className="bg-muted font-mono text-xs"
-          />
-        </div>
-      ))}
-      <TravelCrmOutputFields
-        cfg={cfg}
-        allNodes={allNodes}
-        currentKey={currentKey}
-        onUpdateConfig={onUpdateConfig}
-      />
-    </div>
-  );
-}
-
-function TravelCrmOutputFields({
-  cfg,
-  allNodes,
-  currentKey,
-  onUpdateConfig,
-}: {
-  cfg: TravelCrmActionEdges;
-  allNodes: BuilderNode[];
-  currentKey: string;
-  onUpdateConfig: (patch: Record<string, unknown>) => void;
-}) {
-  return (
-    <>
-      {(
-        [
-          ["Result variable", "result_var", "crm_result"],
-          ["Error variable", "error_var", "travel_crm_error"],
-        ] as const
-      ).map(([label, key, placeholder]) => (
-        <div key={key}>
-          <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
-          <Input
-            value={cfg[key] ?? ""}
-            onChange={(event) =>
-              onUpdateConfig({ [key]: event.target.value.replace(/[^a-zA-Z0-9_]/g, "") })
-            }
-            placeholder={placeholder}
-            className="bg-muted font-mono text-xs"
-          />
-        </div>
-      ))}
-      <div>
-        <label className="mb-1 block text-xs text-muted-foreground">On success</label>
-        <NodeKeySelect
-          value={cfg.success_next_node_key || null}
-          nodes={allNodes}
-          excludeKey={currentKey}
-          onChange={(value) => onUpdateConfig({ success_next_node_key: value ?? "" })}
-          placeholder="Choose next node…"
-        />
-      </div>
-      <div>
-        <label className="mb-1 block text-xs text-muted-foreground">On failure</label>
-        <NodeKeySelect
-          value={cfg.error_next_node_key || null}
-          nodes={allNodes}
-          excludeKey={currentKey}
-          onChange={(value) => onUpdateConfig({ error_next_node_key: value ?? "" })}
-          placeholder="Choose error node…"
-        />
-      </div>
-    </>
-  );
 }
 
 // ============================================================
@@ -602,17 +354,6 @@ interface SendListCfg {
   text?: string;
   button_label?: string;
   footer_text?: string;
-  dynamic_source_var?: string;
-  dynamic_title_field?: string;
-  dynamic_reply_id_field?: string;
-  dynamic_description_field?: string;
-  dynamic_section_title?: string;
-  dynamic_assigned_employee_id_field?: string;
-  dynamic_next_node_key?: string;
-  selected_id_var?: string;
-  selected_title_var?: string;
-  selected_item_var?: string;
-  selected_assigned_employee_id_var?: string;
   sections?: Array<{
     title?: string;
     rows: Array<{
@@ -715,43 +456,6 @@ function SendListForm({
 
   return (
     <>
-      <div>
-        <label className="mb-1 block text-xs text-muted-foreground">
-          List data
-        </label>
-        <Select
-          value={cfg.dynamic_source_var ? "dynamic" : "static"}
-          onValueChange={(value) => {
-            if (value === "dynamic") {
-              onUpdateConfig({
-                dynamic_source_var: cfg.dynamic_source_var || "destinations",
-                dynamic_title_field: cfg.dynamic_title_field || "destination_name",
-                dynamic_reply_id_field: cfg.dynamic_reply_id_field || "destination_id",
-                dynamic_assigned_employee_id_field:
-                  cfg.dynamic_assigned_employee_id_field || "assigned_employee_id",
-                selected_id_var: cfg.selected_id_var || "selected_destination_id",
-                selected_title_var:
-                  cfg.selected_title_var || "selected_destination_name",
-                selected_item_var: cfg.selected_item_var || "selected_destination",
-                selected_assigned_employee_id_var:
-                  cfg.selected_assigned_employee_id_var ||
-                  "selected_assigned_employee_id",
-                dynamic_section_title: cfg.dynamic_section_title || "Destinations",
-              });
-            } else {
-              onUpdateConfig({ dynamic_source_var: "" });
-            }
-          }}
-        >
-          <SelectTrigger className="bg-muted">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="static">Static rows</SelectItem>
-            <SelectItem value="dynamic">Previous node variable</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
       <TextRow
         label={t("bodyText")}
         value={cfg.text ?? ""}
@@ -771,57 +475,6 @@ function SendListForm({
         />
       </div>
 
-      {cfg.dynamic_source_var ? (
-        <div className="grid grid-cols-1 gap-3 rounded-md border border-border bg-muted/40 p-3">
-          <p className="text-xs text-muted-foreground">
-            Dynamic rows are resolved from a previous node&apos;s array. Reply
-            IDs are matched against that array before selection variables are
-            stored.
-          </p>
-          {(
-            [
-              ["Source array variable", "dynamic_source_var", "destinations"],
-              ["Display title field", "dynamic_title_field", "destination_name"],
-              ["Reply ID field", "dynamic_reply_id_field", "destination_id"],
-              ["Description field (optional)", "dynamic_description_field", ""],
-              ["Assigned employee ID field", "dynamic_assigned_employee_id_field", "assigned_employee_id"],
-              ["Selected ID variable", "selected_id_var", "selected_destination_id"],
-              ["Selected title variable", "selected_title_var", "selected_destination_name"],
-              ["Selected item variable", "selected_item_var", "selected_destination"],
-              ["Selected employee variable", "selected_assigned_employee_id_var", "selected_assigned_employee_id"],
-              ["List section title", "dynamic_section_title", "Destinations"],
-            ] as const
-          ).map(([label, key, placeholder]) => (
-            <div key={key}>
-              <label className="mb-1 block text-xs text-muted-foreground">
-                {label}
-              </label>
-              <Input
-                value={cfg[key] ?? ""}
-                onChange={(event) =>
-                  onUpdateConfig({ [key]: event.target.value.trim() })
-                }
-                placeholder={placeholder}
-                className="bg-muted font-mono text-xs"
-              />
-            </div>
-          ))}
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">
-              After selection, advance to
-            </label>
-            <NodeKeySelect
-              value={cfg.dynamic_next_node_key || null}
-              nodes={allNodes}
-              excludeKey={currentKey}
-              onChange={(value) =>
-                onUpdateConfig({ dynamic_next_node_key: value ?? "" })
-              }
-              placeholder={t("nextNodePlaceholder")}
-            />
-          </div>
-        </div>
-      ) : (
       <div className="mt-2">
         <label className="mb-2 block text-xs text-muted-foreground">
           {t("rowsHelp")}
@@ -928,7 +581,6 @@ function SendListForm({
           </Button>
         )}
       </div>
-      )}
     </>
   );
 }
@@ -1254,8 +906,6 @@ function SendMediaForm({
 
   const mediaType = cfg.media_type ?? "image";
   const isDocument = mediaType === "document";
-  const isVariableUrl =
-    !!cfg.media_url && /\{\{(?:vars\.)?[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*\}\}/.test(cfg.media_url);
   const displayName =
     cfg.filename ||
     (cfg.media_url ? cfg.media_url.split("/").pop() ?? "" : "");
@@ -1324,16 +974,9 @@ function SendMediaForm({
         </Select>
       </div>
 
-      <TextRow
-        label="Media URL or flow variable"
-        value={cfg.media_url ?? ""}
-        onChange={(value) => onUpdateConfig({ media_url: value })}
-        rows={1}
-      />
-
       <div>
         <label className="mb-1 block text-xs text-muted-foreground">{t("fileLabel")}</label>
-        {cfg.media_url && !isVariableUrl ? (
+        {cfg.media_url ? (
           <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs">
             <Paperclip className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
             <a
@@ -1349,19 +992,6 @@ function SendMediaForm({
               type="button"
               onClick={handleClear}
               className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-              aria-label={t("removeFile")}
-              disabled={uploading}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ) : isVariableUrl ? (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
-            Media URL will be resolved from flow variables when this node runs.
-            <button
-              type="button"
-              onClick={handleClear}
-              className="ml-auto rounded p-1 hover:bg-muted hover:text-foreground"
               aria-label={t("removeFile")}
               disabled={uploading}
             >
