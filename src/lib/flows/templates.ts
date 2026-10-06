@@ -357,8 +357,10 @@ const TRAVEL_ENQUIRY: FlowTemplate = {
       node_key: "ask_travel_date",
       node_type: "collect_input",
       config: {
-        prompt_text: "When are you planning to travel?",
+        prompt_text: "When are you planning to travel? Please reply in DD-MM-YYYY format (for example, 25-12-2026).",
         var_key: "travel_date",
+        validation: "date",
+        invalid_input_message: "Please enter the date in DD-MM-YYYY format (for example, 25-12-2026). When are you planning to travel? Please reply in DD-MM-YYYY format (for example, 25-12-2026).",
         next_node_key: "ask_adults",
       } as CollectInputNodeConfig,
     },

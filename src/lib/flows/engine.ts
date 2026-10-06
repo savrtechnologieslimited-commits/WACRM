@@ -141,6 +141,32 @@ export function isValidNumericInput(
   return true;
 }
 
+/** Validate an exact DD-MM-YYYY date, including real calendar dates. */
+export function isValidDateInput(value: string): boolean {
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value);
+  if (!match) return false;
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return false;
+  }
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
+  date.setUTCHours(0, 0, 0, 0);
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function dateToIso(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const match = /^(\d{2})-(\d{2})-(\d{4})$/.exec(value);
+  return match ? `${match[3]}-${match[2]}-${match[1]}` : value;
+}
+
 /**
  * The strings an inbound message offers to a flow's *entry* trigger.
  *
@@ -1332,6 +1358,10 @@ async function buildTravelCrmEnquiryPayload(
       : null;
   const verifiedDestination = getVerifiedDestination(run.vars);
   const answers = safeFlowAnswers(run.vars, variableMap);
+  const travelDateKey = variableMap.travel_date;
+  if (travelDateKey && run.vars[travelDateKey] !== undefined) {
+    answers.travel_date = dateToIso(run.vars[travelDateKey]);
+  }
   if (verifiedDestination) {
     answers.travel_type = verifiedDestination.travel_type;
     answers.destination_id = verifiedDestination.destination_id;
@@ -2083,10 +2113,15 @@ async function handleReplyForActiveRun(
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
     const captured = message.text.trim();
     if (captured.length > 0 && cfg.var_key) {
-      if (cfg.validation === 'number' && !isValidNumericInput(captured, cfg)) {
+      const invalidNumber =
+        cfg.validation === 'number' && !isValidNumericInput(captured, cfg);
+      const invalidDate =
+        cfg.validation === 'date' && !isValidDateInput(captured);
+      if (invalidNumber || invalidDate) {
+        const validation = invalidDate ? 'date' : 'number';
         await logEvent(db, run.id, 'fallback_fired', currentNode.node_key, {
           action: 'validation_reprompt',
-          validation: 'number',
+          validation,
           text_length: captured.length,
         });
         try {
@@ -2095,8 +2130,10 @@ async function handleReplyForActiveRun(
             userId: run.user_id,
             conversationId: run.conversation_id!,
             contactId: run.contact_id!,
-            text:
-              cfg.invalid_input_message ?? 'Please enter a valid whole number.',
+            text: cfg.invalid_input_message ??
+              (invalidDate
+                ? `${cfg.prompt_text} (Please use DD-MM-YYYY, for example 25-12-2026.)`
+                : 'Please enter a valid whole number.'),
           });
         } catch (err) {
           await logEvent(db, run.id, 'error', currentNode.node_key, {

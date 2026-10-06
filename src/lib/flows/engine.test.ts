@@ -109,6 +109,7 @@ import {
   isTerminal,
   evaluateConditionPredicate,
   isValidNumericInput,
+  isValidDateInput,
 } from './engine';
 import type {
   engineSendInteractiveButtons,
@@ -283,7 +284,19 @@ describe('matchesKeywordTrigger', () => {
         false
       );
     });
-  });
+
+    });
+
+    describe('isValidDateInput', () => {
+      it('accepts only real dates in DD-MM-YYYY format', () => {
+        expect(isValidDateInput('29-02-2024')).toBe(true);
+        expect(isValidDateInput('31-12-2026')).toBe(true);
+        expect(isValidDateInput('29-02-2025')).toBe(false);
+        expect(isValidDateInput('31-04-2026')).toBe(false);
+        expect(isValidDateInput('2026-12-31')).toBe(false);
+        expect(isValidDateInput('1-12-2026')).toBe(false);
+      });
+    });
 
   it('returns false when keywords array is empty', () => {
     expect(matchesKeywordTrigger('anything', { keywords: [] })).toBe(false);
@@ -629,6 +642,72 @@ describe('send_buttons / send_list interpolate {{vars.*}} (#553)', () => {
     h.state.nodes = nodesEndingIn('choose');
     h.state.events = [];
     h.state.updates = [];
+  });
+
+  describe('collect_input validation reprompts', () => {
+    beforeEach(() => {
+      h.state.activeRuns = [
+        { ...RUN, current_node_key: 'ask_travel_date', vars: {} },
+      ];
+      h.state.flows = [FLOW];
+      h.state.nodes = [
+        {
+          id: 'n-date',
+          flow_id: 'flow-1',
+          node_key: 'ask_travel_date',
+          node_type: 'collect_input',
+          config: {
+            prompt_text: 'When are you planning to travel?',
+            var_key: 'travel_date',
+            validation: 'date',
+            invalid_input_message:
+              'Please enter the date in DD-MM-YYYY format. When are you planning to travel? Please reply in DD-MM-YYYY format.',
+            next_node_key: 'done',
+          },
+        },
+        { id: 'n-done', flow_id: 'flow-1', node_key: 'done', node_type: 'end', config: {} },
+      ];
+      h.state.events = [];
+      h.state.updates = [];
+      h.sendText.mockClear();
+    });
+
+    it('repeats the date question for invalid input without advancing or exhausting retries', async () => {
+      const result = await dispatch(text('tomorrow'));
+
+      expect(result).toMatchObject({ consumed: true, outcome: 'fallback_fired' });
+      expect(h.sendText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'Please enter the date in DD-MM-YYYY format. When are you planning to travel? Please reply in DD-MM-YYYY format.',
+        })
+      );
+      expect(h.state.updates).not.toContainEqual(
+        expect.objectContaining({
+          table: 'flow_runs',
+          row: expect.objectContaining({ current_node_key: 'done' }),
+        })
+      );
+      expect(h.state.events).toContainEqual(
+        expect.objectContaining({
+          event_type: 'fallback_fired',
+          payload: expect.objectContaining({ action: 'validation_reprompt', validation: 'date' }),
+        })
+      );
+    });
+
+    it('accepts a valid date and advances', async () => {
+      const result = await dispatch(text('25-12-2026'));
+
+      expect(result).toMatchObject({ consumed: true, outcome: 'completed' });
+      expect(h.state.updates).toContainEqual(
+        expect.objectContaining({
+          table: 'flow_runs',
+          row: expect.objectContaining({
+            vars: expect.objectContaining({ travel_date: '25-12-2026' }),
+          }),
+        })
+      );
+    });
   });
 
   it('send_buttons after collect_input renders body, header and button titles', async () => {
@@ -1249,7 +1328,7 @@ describe('visual Travel CRM actions in the flow engine', () => {
         current_node_key: 'menu',
         vars: {
           customer_name: 'Sam',
-          travel_date: '2026-12-01',
+          travel_date: '25-12-2026',
           adults: '2',
           children: '1',
           departure_city: 'Mumbai',
@@ -1389,7 +1468,7 @@ describe('visual Travel CRM actions in the flow engine', () => {
       },
       answers: {
         customer_name: 'Sam',
-        travel_date: '2026-12-01',
+        travel_date: '2026-12-25',
         adults: '2',
         children: '1',
         departure_city: 'Mumbai',

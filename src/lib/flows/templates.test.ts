@@ -46,6 +46,11 @@ describe("Travel Enquiry WhatsApp Flow template", () => {
       min_value: 1,
       invalid_input_message: "Please enter a valid number of adults (1 or more).",
     });
+    expect(nodes.get("ask_travel_date")?.config).toMatchObject({
+      validation: "date",
+      prompt_text: expect.stringContaining("DD-MM-YYYY"),
+      invalid_input_message: expect.stringContaining("DD-MM-YYYY"),
+    });
     expect(nodes.get("ask_children")?.config).toMatchObject({
       validation: "number",
       min_value: 0,
