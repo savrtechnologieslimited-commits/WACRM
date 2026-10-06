@@ -787,15 +787,27 @@ async function processMessage(
         : 'text'        // reaction, unknown → text fallback
 
   // Determine whether this is the contact's very first inbound message
-  // BEFORE we insert, so the count is accurate. Covers the case where
+  // BEFORE we insert. The existence check avoids counting the full history
+  // on every inbound while still covering the case where
   // the contact row already exists (manual add / CSV import) but they've
   // never messaged us before — which new_contact_created wouldn't catch.
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
+  const {
+    data: priorCustomerMessage,
+    error: priorCustomerMessageError,
+  } = await supabaseAdmin()
     .from('messages')
-    .select('id', { count: 'exact', head: true })
+    .select('id')
     .eq('conversation_id', conversation.id)
     .eq('sender_type', 'customer')
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
+    .limit(1)
+    .maybeSingle()
+  if (priorCustomerMessageError) {
+    console.error(
+      'Error checking prior customer messages:',
+      priorCustomerMessageError,
+    )
+  }
+  const isFirstInboundMessage = !priorCustomerMessage
 
   // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
   // transient 5xx), and each retry replays the exact same message.id. The
@@ -856,28 +868,18 @@ async function processMessage(
   // both reads see the same value and write the same increment, losing one
   // (issue #369). The RPC increments in a single UPDATE and refreshes the
   // last-message summary in the same statement.
-  const { error: convError } = await supabaseAdmin().rpc(
-    'bump_conversation_on_inbound',
-    {
+  const [bumpResult] = await Promise.all([
+    supabaseAdmin().rpc('bump_conversation_on_inbound', {
       p_conversation_id: conversation.id,
       p_last_message_text: contentText || `[${message.type}]`,
-    }
-  )
+    }),
+    reopenClosedConversation(supabaseAdmin(), conversation),
+    flagBroadcastReplyIfAny(accountId, contactRecord.id),
+  ])
 
-  if (convError) {
-    console.error('Error updating conversation:', convError)
+  if (bumpResult.error) {
+    console.error('Error updating conversation:', bumpResult.error)
   }
-
-  // A customer writing again re-opens the thread (issue #409). Kept as a
-  // separate conditional statement rather than a `status` field on the
-  // update above so the write can be gated on the row's CURRENT status in
-  // SQL — see the helper for why that matters.
-  await reopenClosedConversation(supabaseAdmin(), conversation)
-
-  // If this contact was a recent broadcast recipient, flag the reply
-  // so the broadcast's `replied_count` advances (via the aggregate
-  // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id)
 
   // ============================================================
   // Flow runner dispatch.

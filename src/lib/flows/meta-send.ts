@@ -42,9 +42,10 @@ export async function loadAccountMetaCredentials(
   db: ReturnType<typeof supabaseAdmin>,
   accountId: string,
   conversationId?: string,
+  channelPhoneNumberId?: string | null,
 ): Promise<{ phoneNumberId: string; accessToken: string }> {
-  let phoneNumberId: string | null = null;
-  if (conversationId) {
+  let phoneNumberId = channelPhoneNumberId ?? null;
+  if (channelPhoneNumberId === undefined && conversationId) {
     const { data: conversation, error: conversationError } = await db
       .from('conversations')
       .select('channel_phone_number_id')
@@ -109,19 +110,19 @@ export async function engineSendText(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', args.contactId)
-    .eq('account_id', args.accountId)
-    .maybeSingle()
+  const [contactResult, channelPhoneNumberId] = await Promise.all([
+    db
+      .from('contacts')
+      .select('id, phone, wa_user_id')
+      .eq('id', args.contactId)
+      .eq('account_id', args.accountId)
+      .maybeSingle(),
+    assertConversationInAccount(db, args.conversationId, args.accountId),
+  ])
+  const { data: contact, error: contactErr } = contactResult
   if (contactErr || !contact) {
     throw new Error('contact not found for this account')
   }
-
-  // Same for the conversation the message lands in — see
-  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
-  await assertConversationInAccount(db, args.conversationId, args.accountId)
 
   // Phone number, or the business-scoped user ID when Meta has never
   // given us a number for this customer (issue #519).
@@ -137,6 +138,7 @@ export async function engineSendText(
     db,
     args.accountId,
     args.conversationId,
+    channelPhoneNumberId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -224,19 +226,19 @@ export async function engineSendMedia(
 ): Promise<{ whatsapp_message_id: string }> {
   const db = supabaseAdmin()
 
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', args.contactId)
-    .eq('account_id', args.accountId)
-    .maybeSingle()
+  const [contactResult, channelPhoneNumberId] = await Promise.all([
+    db
+      .from('contacts')
+      .select('id, phone, wa_user_id')
+      .eq('id', args.contactId)
+      .eq('account_id', args.accountId)
+      .maybeSingle(),
+    assertConversationInAccount(db, args.conversationId, args.accountId),
+  ])
+  const { data: contact, error: contactErr } = contactResult
   if (contactErr || !contact) {
     throw new Error('contact not found for this account')
   }
-
-  // Same for the conversation the message lands in — see
-  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
-  await assertConversationInAccount(db, args.conversationId, args.accountId)
 
   // Phone number, or the business-scoped user ID when Meta has never
   // given us a number for this customer (issue #519).
@@ -252,6 +254,7 @@ export async function engineSendMedia(
     db,
     args.accountId,
     args.conversationId,
+    channelPhoneNumberId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -381,19 +384,19 @@ async function sendInteractiveViaMeta(
   // Scope the contact + whatsapp_config lookups by account_id —
   // same defense-in-depth rationale as automations/meta-send.ts.
   // Migration 017 moved both tables to account-scoped tenancy.
-  const { data: contact, error: contactErr } = await db
-    .from('contacts')
-    .select('id, phone, wa_user_id')
-    .eq('id', input.contactId)
-    .eq('account_id', input.accountId)
-    .maybeSingle()
+  const [contactResult, channelPhoneNumberId] = await Promise.all([
+    db
+      .from('contacts')
+      .select('id, phone, wa_user_id')
+      .eq('id', input.contactId)
+      .eq('account_id', input.accountId)
+      .maybeSingle(),
+    assertConversationInAccount(db, input.conversationId, input.accountId),
+  ])
+  const { data: contact, error: contactErr } = contactResult
   if (contactErr || !contact) {
     throw new Error('contact not found for this account')
   }
-
-  // Same for the conversation the message lands in — see
-  // conversation-scope.ts (GHSA-m4fx-g6pr-hrw8).
-  await assertConversationInAccount(db, input.conversationId, input.accountId)
 
   // Phone number, or the business-scoped user ID when Meta has never
   // given us a number for this customer (issue #519).
@@ -409,6 +412,7 @@ async function sendInteractiveViaMeta(
     db,
     input.accountId,
     input.conversationId,
+    channelPhoneNumberId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
