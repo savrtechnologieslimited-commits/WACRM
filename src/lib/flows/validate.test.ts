@@ -28,6 +28,57 @@ describe("validateFlowForActivation — happy path", () => {
   it("produces no issues on a well-formed flow", () => {
     expect(validateFlowForActivation(validFlow, validNodes)).toEqual([]);
   });
+
+  describe("validateFlowForActivation — Travel CRM visual nodes", () => {
+    it("accepts a Travel CRM lookup with explicit success and error paths", () => {
+      const nodes = [
+        {
+          node_key: "lookup",
+          node_type: "travel_crm_get_destinations",
+          config: {
+            travel_type: "domestic",
+            result_var: "destinations",
+            error_var: "travel_crm_error",
+            success_next_node_key: "ok",
+            error_next_node_key: "failed",
+          },
+        },
+        { node_key: "ok", node_type: "end", config: {} },
+        { node_key: "failed", node_type: "handoff", config: {} },
+      ];
+      expect(
+        validateFlowForActivation(
+          { ...validFlow, entry_node_id: "lookup" },
+          nodes,
+        ),
+      ).toEqual([]);
+    });
+
+    it("requires dynamic list mappings and a selection target", () => {
+      const nodes = [
+        { node_key: "start", node_type: "start", config: { next_node_key: "list" } },
+        {
+          node_key: "list",
+          node_type: "send_list",
+          config: {
+            text: "Choose",
+            button_label: "Destinations",
+            dynamic_source_var: "destinations",
+            dynamic_next_node_key: "",
+          },
+        },
+      ];
+      const issues = validateFlowForActivation(validFlow, nodes);
+      expect(issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ node_key: "list", field: "dynamic_title_field" }),
+          expect.objectContaining({ node_key: "list", field: "dynamic_reply_id_field" }),
+          expect.objectContaining({ node_key: "list", field: "selected_id_var" }),
+          expect.objectContaining({ node_key: "list", field: "dynamic_next_node_key" }),
+        ]),
+      );
+    });
+  });
 });
 
 describe("validateFlowForActivation — flow-level", () => {

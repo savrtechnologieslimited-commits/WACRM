@@ -47,6 +47,8 @@ export interface SendButtonsNodeConfig {
     title: string;
     /** node_key the runner advances to when this button is tapped. */
     next_node_key: string;
+    /** Static values to capture into flow_runs.vars when tapped. */
+    set_vars?: Record<string, string>;
   }>;
 }
 
@@ -66,6 +68,27 @@ export interface SendListNodeConfig {
       next_node_key: string;
     }>;
   }>;
+  /**
+   * When true, the runner loads destinations from the signed Travel CRM
+   * endpoint and pages them into Meta-sized lists. The static row remains
+   * as a validator-visible graph edge for destination selection.
+   */
+  dynamic_destinations?: boolean;
+  destination_scope_var?: string;
+  selection_next_node_key?: string;
+  /** Flow variable containing an array of objects to render as list rows. */
+  dynamic_source_var?: string;
+  dynamic_title_field?: string;
+  dynamic_reply_id_field?: string;
+  dynamic_description_field?: string;
+  dynamic_section_title?: string;
+  dynamic_assigned_employee_id_field?: string;
+  dynamic_page_var?: string;
+  dynamic_next_node_key?: string;
+  selected_id_var?: string;
+  selected_title_var?: string;
+  selected_item_var?: string;
+  selected_assigned_employee_id_var?: string;
 }
 
 /**
@@ -82,8 +105,8 @@ export interface SendListNodeConfig {
  * meaningful behavioural difference.
  */
 export interface SendMediaNodeConfig {
-  media_type: "image" | "video" | "document";
-  /** Public URL Meta will fetch. Uploaded via the builder's file picker. */
+  media_type: 'image' | 'video' | 'document';
+  /** Public URL or a {{vars.*}} expression Meta will fetch. */
   media_url: string;
   /** Optional caption shown under the media (Meta caps at 1024 chars). */
   caption?: string;
@@ -129,7 +152,7 @@ export interface CollectInputNodeConfig {
    * Reserved for v2. Accepted on the config but ignored by the v1.5
    * runner — captures any non-empty text.
    */
-  validation?: "any" | "email" | "phone" | "regex" | "number";
+  validation?: 'any' | 'email' | 'phone' | 'regex' | 'number';
   /** Used only when `validation === 'regex'`. */
   regex?: string;
   /** Inclusive numeric bounds for `validation === 'number'`. */
@@ -141,13 +164,9 @@ export interface CollectInputNodeConfig {
   next_node_key: string;
 }
 
-export type ConditionOperator =
-  | "equals"
-  | "contains"
-  | "present"
-  | "absent";
+export type ConditionOperator = 'equals' | 'contains' | 'present' | 'absent';
 
-export type ConditionSubject = "var" | "tag" | "contact_field";
+export type ConditionSubject = 'var' | 'tag' | 'contact_field';
 
 /**
  * Routes the run based on a predicate over the contact's tags,
@@ -172,36 +191,73 @@ export interface ConditionNodeConfig {
 }
 
 export interface SetTagNodeConfig {
-  mode: "add" | "remove";
+  mode: 'add' | 'remove';
   /** Tag UUID. The builder picks from the user's existing tags. */
   tag_id: string;
   next_node_key: string;
+}
+
+export interface TravelCrmGetDestinationsNodeConfig {
+  travel_type: 'domestic' | 'international';
+  result_var: string;
+  error_var: string;
+  success_next_node_key: string;
+  error_next_node_key: string;
+}
+
+export interface TravelCrmGetDestinationNodeConfig {
+  destination_id_var: string;
+  travel_type_var: string;
+  result_var: string;
+  error_var: string;
+  success_next_node_key: string;
+  error_next_node_key: string;
+}
+
+export interface TravelCrmCompleteEnquiryNodeConfig {
+  /** Maps enquiry-answer names to keys in flow_runs.vars. */
+  variable_map: Record<string, string>;
+  /** Variable containing a Travel CRM-verified destination result. */
+  destination_var: string;
+  result_var: string;
+  error_var: string;
+  success_next_node_key: string;
+  error_next_node_key: string;
 }
 
 // Terminal nodes carry no config — they just stop the run.
 export type EndNodeConfig = Record<string, never>;
 
 /**
- * Total union — every concrete node_type the v1 engine understands.
+ * Total union — every concrete node_type the flow engine understands.
  * Add new node types here and the engine's switch will flag missing
  * cases via TypeScript's exhaustiveness check.
- *
- * v1.5+ additions (collect_input, condition, set_tag, http_fetch) will
- * extend this union — out-of-scope for the v1 engine PR.
  */
 export type FlowNodeConfig =
-  | { node_type: "start"; config: StartNodeConfig }
-  | { node_type: "send_message"; config: SendMessageNodeConfig }
-  | { node_type: "send_buttons"; config: SendButtonsNodeConfig }
-  | { node_type: "send_list"; config: SendListNodeConfig }
-  | { node_type: "send_media"; config: SendMediaNodeConfig }
-  | { node_type: "collect_input"; config: CollectInputNodeConfig }
-  | { node_type: "condition"; config: ConditionNodeConfig }
-  | { node_type: "set_tag"; config: SetTagNodeConfig }
-  | { node_type: "handoff"; config: HandoffNodeConfig }
-  | { node_type: "end"; config: EndNodeConfig };
+  | { node_type: 'start'; config: StartNodeConfig }
+  | { node_type: 'send_message'; config: SendMessageNodeConfig }
+  | { node_type: 'send_buttons'; config: SendButtonsNodeConfig }
+  | { node_type: 'send_list'; config: SendListNodeConfig }
+  | { node_type: 'send_media'; config: SendMediaNodeConfig }
+  | { node_type: 'collect_input'; config: CollectInputNodeConfig }
+  | { node_type: 'condition'; config: ConditionNodeConfig }
+  | { node_type: 'set_tag'; config: SetTagNodeConfig }
+  | {
+      node_type: 'travel_crm_get_destinations';
+      config: TravelCrmGetDestinationsNodeConfig;
+    }
+  | {
+      node_type: 'travel_crm_get_destination';
+      config: TravelCrmGetDestinationNodeConfig;
+    }
+  | {
+      node_type: 'travel_crm_complete_enquiry';
+      config: TravelCrmCompleteEnquiryNodeConfig;
+    }
+  | { node_type: 'handoff'; config: HandoffNodeConfig }
+  | { node_type: 'end'; config: EndNodeConfig };
 
-export type FlowNodeType = FlowNodeConfig["node_type"];
+export type FlowNodeType = FlowNodeConfig['node_type'];
 
 // ============================================================
 // Triggers (matches `flows.trigger_type` + `trigger_config`)
@@ -210,7 +266,7 @@ export type FlowNodeType = FlowNodeConfig["node_type"];
 export interface KeywordTriggerConfig {
   /** One or more keywords. Match is case-insensitive by default. */
   keywords: string[];
-  match_type?: "exact" | "contains";
+  match_type?: 'exact' | 'contains';
   case_sensitive?: boolean;
   /** Do not start this flow again after it has completed or handed off for this contact. */
   once_per_contact?: boolean;
@@ -222,9 +278,9 @@ export interface KeywordTriggerConfig {
 export type FirstInboundTriggerConfig = Record<string, never>;
 
 export type FlowTriggerConfig =
-  | { trigger_type: "keyword"; config: KeywordTriggerConfig }
-  | { trigger_type: "first_inbound_message"; config: FirstInboundTriggerConfig }
-  | { trigger_type: "manual"; config: Record<string, never> };
+  | { trigger_type: 'keyword'; config: KeywordTriggerConfig }
+  | { trigger_type: 'first_inbound_message'; config: FirstInboundTriggerConfig }
+  | { trigger_type: 'manual'; config: Record<string, never> };
 
 // ============================================================
 // DB-row shapes (read by the engine via supabaseAdmin)
@@ -240,9 +296,10 @@ export interface FlowRow {
   user_id: string;
   name: string;
   description: string | null;
-  status: "draft" | "active" | "archived";
-  trigger_type: "keyword" | "first_inbound_message" | "manual";
-  trigger_config: KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
+  status: 'draft' | 'active' | 'archived';
+  trigger_type: 'keyword' | 'first_inbound_message' | 'manual';
+  trigger_config:
+    KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy: FlowFallbackPolicy;
   execution_count: number;
@@ -272,12 +329,12 @@ export interface FlowRunRow {
   contact_id: string | null;
   conversation_id: string | null;
   status:
-    | "active"
-    | "completed"
-    | "handed_off"
-    | "timed_out"
-    | "paused_by_agent"
-    | "failed";
+    | 'active'
+    | 'completed'
+    | 'handed_off'
+    | 'timed_out'
+    | 'paused_by_agent'
+    | 'failed';
   current_node_key: string | null;
   last_prompt_message_id: string | null;
   vars: Record<string, unknown>;
@@ -294,20 +351,20 @@ export interface FlowRunRow {
 
 export interface FlowFallbackPolicy {
   /** What to do when the customer reply doesn't match any option. */
-  on_unknown_reply: "reprompt" | "handoff" | "ignore";
+  on_unknown_reply: 'reprompt' | 'handoff' | 'ignore';
   /** Max reprompts before applying `on_exhaust`. */
   max_reprompts: number;
   /** Stale-run sweep cutoff. */
   on_timeout_hours: number;
   /** What to do once max_reprompts has been hit. */
-  on_exhaust: "handoff" | "end";
+  on_exhaust: 'handoff' | 'end';
 }
 
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
-  on_unknown_reply: "reprompt",
+  on_unknown_reply: 'reprompt',
   max_reprompts: 2,
   on_timeout_hours: 24,
-  on_exhaust: "handoff",
+  on_exhaust: 'handoff',
 };
 
 // ============================================================
@@ -321,14 +378,14 @@ export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
  */
 export type ParsedInbound =
   | {
-      kind: "text";
+      kind: 'text';
       /** The user's typed message body. */
       text: string;
       /** Meta's `messages[0].id` — used for idempotency. */
       meta_message_id: string;
     }
   | {
-      kind: "interactive_reply";
+      kind: 'interactive_reply';
       /** The reply_id of the tapped button or list row. */
       reply_id: string;
       /** The visible title of the tapped option (for logging). */
@@ -359,14 +416,14 @@ export interface DispatchInboundResult {
   flow_run_id?: string;
   /** For diagnostics. */
   outcome?:
-    | "advanced"
-    | "started"
-    | "completed"
-    | "handed_off"
-    | "fallback_fired"
-    | "duplicate_inbound_ignored"
-    | "already_completed"
-    | "no_match";
+    | 'advanced'
+    | 'started'
+    | 'completed'
+    | 'handed_off'
+    | 'fallback_fired'
+    | 'duplicate_inbound_ignored'
+    | 'already_completed'
+    | 'no_match';
 }
 
 // ============================================================

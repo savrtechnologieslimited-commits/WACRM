@@ -61,6 +61,30 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
         break;
       }
 
+      case "travel_crm_get_destinations":
+      case "travel_crm_get_destination":
+      case "travel_crm_complete_enquiry": {
+        const cfg = node.config as {
+          success_next_node_key?: string;
+          error_next_node_key?: string;
+        };
+        for (const [sourceHandle, target, label] of [
+          ["success", cfg.success_next_node_key, "success"],
+          ["error", cfg.error_next_node_key, "error"],
+        ] as const) {
+          if (target && knownKeys.has(target)) {
+            edges.push({
+              id: `${node.node_key}--${sourceHandle}--${target}`,
+              source: node.node_key,
+              target,
+              sourceHandle,
+              label,
+            });
+          }
+        }
+        break;
+      }
+
       case "condition": {
         const trueNext = (cfg as { true_next?: string }).true_next;
         const falseNext = (cfg as { false_next?: string }).false_next;
@@ -110,6 +134,23 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       }
 
       case "send_list": {
+        const dynamic = cfg as {
+          dynamic_source_var?: string;
+          dynamic_next_node_key?: string;
+        };
+        if (dynamic.dynamic_source_var) {
+          const next = dynamic.dynamic_next_node_key;
+          if (next && knownKeys.has(next)) {
+            edges.push({
+              id: `${node.node_key}--selection--${next}`,
+              source: node.node_key,
+              target: next,
+              sourceHandle: "selection",
+              label: "selection",
+            });
+          }
+          break;
+        }
         const sections = Array.isArray(
           (cfg as { sections?: unknown }).sections,
         )
@@ -181,6 +222,14 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "set_tag":
       return [{ id: "next", label: "Next" }];
 
+    case "travel_crm_get_destinations":
+    case "travel_crm_get_destination":
+    case "travel_crm_complete_enquiry":
+      return [
+        { id: "success", label: "success" },
+        { id: "error", label: "error" },
+      ];
+
     case "condition":
       return [
         { id: "true", label: "true" },
@@ -204,6 +253,13 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     }
 
     case "send_list": {
+      const dynamic = cfg as {
+        dynamic_source_var?: string;
+        dynamic_next_node_key?: string;
+      };
+      if (dynamic.dynamic_source_var) {
+        return [{ id: "selection", label: "selection" }];
+      }
       const sections = Array.isArray((cfg as { sections?: unknown }).sections)
         ? ((cfg as { sections: Array<Record<string, unknown>> }).sections)
         : [];
@@ -256,6 +312,15 @@ export function applyEdgeConnection(
       if (sourceHandle === "next") return { next_node_key: targetKey };
       return null;
 
+    case "travel_crm_get_destinations":
+    case "travel_crm_get_destination":
+    case "travel_crm_complete_enquiry":
+      if (sourceHandle === "success")
+        return { success_next_node_key: targetKey };
+      if (sourceHandle === "error")
+        return { error_next_node_key: targetKey };
+      return null;
+
     case "condition":
       if (sourceHandle === "true") return { true_next: targetKey };
       if (sourceHandle === "false") return { false_next: targetKey };
@@ -282,6 +347,13 @@ export function applyEdgeConnection(
     }
 
     case "send_list": {
+      const dynamic = node.config as {
+        dynamic_source_var?: string;
+        dynamic_next_node_key?: string;
+      };
+      if (sourceHandle === "selection" && dynamic.dynamic_source_var) {
+        return { dynamic_next_node_key: targetKey };
+      }
       if (!sourceHandle.startsWith("row:")) return null;
       const replyId = sourceHandle.slice("row:".length);
       const sections = Array.isArray(
@@ -352,6 +424,23 @@ function patchedConfigWithoutKey(
       return { ...cfg, next_node_key: "" };
     }
 
+    case "travel_crm_get_destinations":
+    case "travel_crm_get_destination":
+    case "travel_crm_complete_enquiry": {
+      const c = cfg as {
+        success_next_node_key?: string;
+        error_next_node_key?: string;
+      };
+      const successMatch = c.success_next_node_key === deletedKey;
+      const errorMatch = c.error_next_node_key === deletedKey;
+      if (!successMatch && !errorMatch) return null;
+      return {
+        ...cfg,
+        ...(successMatch ? { success_next_node_key: "" } : {}),
+        ...(errorMatch ? { error_next_node_key: "" } : {}),
+      };
+    }
+
     case "condition": {
       const c = cfg as { true_next?: string; false_next?: string };
       const trueMatch = c.true_next === deletedKey;
@@ -380,6 +469,15 @@ function patchedConfigWithoutKey(
     }
 
     case "send_list": {
+      const dynamic = cfg as {
+        dynamic_source_var?: string;
+        dynamic_next_node_key?: string;
+      };
+      if (dynamic.dynamic_source_var) {
+        return dynamic.dynamic_next_node_key === deletedKey
+          ? { ...cfg, dynamic_next_node_key: "" }
+          : null;
+      }
       const sections = Array.isArray((cfg as { sections?: unknown }).sections)
         ? (cfg as {
             sections: Array<Record<string, unknown>>;
@@ -409,4 +507,3 @@ function patchedConfigWithoutKey(
       return null;
   }
 }
-
