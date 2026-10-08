@@ -12,7 +12,8 @@ import {
   isUniqueViolation,
   type ExistingContact,
 } from '@/lib/contacts/dedupe';
-import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+import { parseValidPhoneNumber } from '@/lib/phone-number';
+import { PhoneNumberInput } from '@/components/phone-number-input';
 import {
   Dialog,
   DialogContent,
@@ -146,14 +147,9 @@ export function ContactForm({
       return;
     }
 
-    // A number typed here must carry its country code (leading `+`):
-    // "4155551212" reads as a US number to the person typing it but is
-    // delivered to +41 (Switzerland) by Meta (issue #586). Only checked
-    // when the number actually changed — contacts created by the inbound
-    // webhook store Meta's digits-only form, and editing their name must
-    // not be blocked by a phone the user never touched.
     const phoneChanged = !isEdit || phone.trim() !== (contact?.phone ?? '');
-    if (phoneChanged && !parseInternationalPhone(phone)) {
+    const normalizedPhone = phoneChanged ? parseValidPhoneNumber(phone) : phone.trim();
+    if (!normalizedPhone) {
       toast.error(t('phoneNeedsCountryCode'));
       return;
     }
@@ -183,7 +179,7 @@ export function ContactForm({
           .from('contacts')
           .update({
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: normalizedPhone,
             email: email.trim() || null,
             company: company.trim() || null,
             updated_at: new Date().toISOString(),
@@ -208,7 +204,7 @@ export function ContactForm({
               ? { channel_phone_number_id: channelPhoneNumberId }
               : {}),
             name: name.trim() || null,
-            phone: phone.trim(),
+            phone: normalizedPhone,
             email: email.trim() || null,
             company: company.trim() || null,
           })
@@ -293,16 +289,15 @@ export function ContactForm({
             <Label htmlFor="cf-phone" className="text-muted-foreground">
               {t('phoneLabel')} <span className="text-red-400">*</span>
             </Label>
-            <Input
+            <PhoneNumberInput
               id="cf-phone"
               value={phone}
-              onChange={(e) => {
-                setPhone(e.target.value);
+              onChange={(value) => {
+                setPhone(value);
                 if (dupMatch) setDupMatch(null);
               }}
               onBlur={checkDuplicate}
-              placeholder={t('phonePlaceholder')}
-              className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              required
             />
             {dupMatch ? (
               <div

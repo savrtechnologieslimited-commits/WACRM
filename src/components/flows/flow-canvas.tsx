@@ -700,6 +700,9 @@ const ADD_NODE_TYPES: NodeType[] = [
   'collect_input',
   'condition',
   'set_tag',
+  'travel_crm_get_destinations',
+  'travel_crm_get_destination',
+  'travel_crm_complete_enquiry',
   'handoff',
   'end',
 ];

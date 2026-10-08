@@ -375,7 +375,7 @@
       "namePlaceholder": "María Pérez",
       "phoneLabel": "Número de teléfono",
       "phonePlaceholder": "+1234567890",
-      "phoneHint": "Incluye el código de país, p. ej. +52 para México",
+      "phoneHint": "Selecciona un código de país (India está seleccionada de forma predeterminada).",
       "emailLabel": "Correo electrónico",
       "emailPlaceholder": "maria@example.com",
       "companyLabel": "Empresa",
@@ -398,7 +398,7 @@
       "loadingTags": "Cargando etiquetas...",
       "noTagsAvailable": "No hay etiquetas disponibles. Crea etiquetas en Configuración.",
       "phoneRequired": "El número de teléfono es obligatorio",
-      "phoneNeedsCountryCode": "Incluye el código de país — el número debe empezar con + (p. ej. +5215512345678)"
+      "phoneNeedsCountryCode": "Introduce un número de teléfono válido para el país seleccionado."
     },
     "detailView": {
       "tabs": {
@@ -450,7 +450,7 @@
       "saveChangesBtn": "Guardar cambios",
       "saveCustomFieldsBtn": "Guardar campos personalizados",
       "toastPhoneRequired": "El número de teléfono es obligatorio",
-      "toastPhoneNeedsCountryCode": "Incluye el código de país — el número debe empezar con + (p. ej. +5215512345678)",
+      "toastPhoneNeedsCountryCode": "Introduce un número de teléfono válido para el país seleccionado.",
       "toastUpdateFailed": "Error al actualizar el contacto",
       "toastUpdated": "Contacto actualizado",
       "toastNotAuthenticated": "No autenticado",
@@ -465,7 +465,7 @@
     },
     "importModal": {
       "title": "Importar contactos",
-      "desc": "Sube un CSV con una columna <phoneCode>phone</phoneCode> obligatoria. Opcionales: <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode>, <tagsCode>tags</tagsCode> (separadas por comas; pon entre comillas las celdas con varias etiquetas).",
+      "desc": "Sube un CSV con una columna <phoneCode>phone</phoneCode> obligatoria. Los números sin código + usan el país predeterminado seleccionado. Las columnas <nameCode>name</nameCode>, <emailCode>email</emailCode>, <companyCode>company</companyCode> y <tagsCode>tags</tagsCode> son opcionales.",
       "uploadDropzone": "Haz clic para elegir un archivo CSV",
       "uploadHint": ".csv hasta el límite de tu navegador",
       "rowsReady": "{count} fila lista",
@@ -485,7 +485,7 @@
       "resultFailed": "{count} con error",
       "failedRowsHeading": "Filas con error",
       "unknownReason": "Error desconocido",
-      "invalidPhoneHint": "Los números de teléfono deben empezar con + y el código de país (p. ej. +5215512345678). Los números sin código se entregarían en el país equivocado.",
+      "invalidPhoneHint": "Se omiten las filas no válidas. Los números deben ser válidos para el país seleccionado o incluir su propio código + de país.",
       "willBeCreated": "{name} (se creará al importar)",
       "columns": {
         "phone": "Teléfono",
@@ -779,9 +779,9 @@
         "value": "Valor",
         "valuePlaceholder": "Valor a comparar",
         "uploadCsv": "Subir archivo CSV",
-        "csvFormatDesc": "Debe contener una columna 'phone' (formato E.164). La columna 'name' es opcional.",
+        "csvFormatDesc": "Debe contener una columna 'phone'. Los números sin código + usan el país seleccionado; 'name' es opcional.",
         "csvContactsFound": "{count} contacto(s) válido(s) encontrado(s) en el CSV.",
-        "csvInvalidPhones": "{count} fila(s) omitida(s): los números de teléfono deben empezar con + y el código de país (p. ej. +5215512345678).",
+        "csvInvalidPhones": "Se omitieron {count} fila(s) porque el número no es válido para el país seleccionado.",
         "errorLoadTags": "Error al cargar las etiquetas",
         "errorLoadFields": "Error al cargar los campos personalizados",
         "errorCsvParse": "No se pudo leer el archivo CSV.",
@@ -1228,6 +1228,7 @@
       "categories": {
         "messaging": "Mensajería",
         "logic": "Lógica y datos",
+        "integration": "Integraciones",
         "flow": "Control de flujo"
       },
       "nodes": {
@@ -1262,6 +1263,18 @@
         "set_tag": {
           "label": "Etiquetar contacto",
           "blurb": "Agrega o quita una etiqueta del contacto"
+        },
+        "travel_crm_get_destinations": {
+          "label": "Travel CRM — Obtener destinos",
+          "blurb": "Carga destinos activos asignados desde Travel CRM"
+        },
+        "travel_crm_get_destination": {
+          "label": "Travel CRM — Obtener destino",
+          "blurb": "Carga los detalles verificados y el PDF del destino"
+        },
+        "travel_crm_complete_enquiry": {
+          "label": "Travel CRM — Completar consulta",
+          "blurb": "Crea o actualiza la consulta canónica en el CRM"
         },
         "handoff": {
           "label": "Transferir a agente",

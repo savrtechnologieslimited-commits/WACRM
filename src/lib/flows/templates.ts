@@ -28,18 +28,18 @@ import type {
   SendListNodeConfig,
   SendMessageNodeConfig,
   StartNodeConfig,
-} from "./types";
+} from './types';
 
 export type FlowTemplateNodeType =
-  | "start"
-  | "send_message"
-  | "send_buttons"
-  | "send_list"
-  | "collect_input"
-  | "condition"
-  | "set_tag"
-  | "handoff"
-  | "end";
+  | 'start'
+  | 'send_message'
+  | 'send_buttons'
+  | 'send_list'
+  | 'collect_input'
+  | 'condition'
+  | 'set_tag'
+  | 'handoff'
+  | 'end';
 
 export interface FlowTemplateNode {
   node_key: string;
@@ -60,8 +60,8 @@ export interface FlowTemplate {
   name: string;
   description: string;
   /** Used by the gallery to surface a relevant icon. lucide-react name. */
-  icon: "MessageSquare" | "HelpCircle" | "UserPlus";
-  trigger_type: "keyword" | "first_inbound_message" | "manual";
+  icon: 'MessageSquare' | 'HelpCircle' | 'UserPlus';
+  trigger_type: 'keyword' | 'first_inbound_message' | 'manual';
   trigger_config: KeywordTriggerConfig | Record<string, unknown>;
   entry_node_id: string;
   nodes: FlowTemplateNode[];
@@ -71,52 +71,55 @@ export interface FlowTemplate {
 // 1. Welcome menu — the example from the owner's brief
 // ============================================================
 const WELCOME_MENU: FlowTemplate = {
-  slug: "welcome_menu",
-  name: "Welcome menu",
+  slug: 'welcome_menu',
+  name: 'Welcome menu',
   description:
     "Greet customers who type a keyword and route them to the right agent based on whether they're new or existing.",
-  icon: "MessageSquare",
-  trigger_type: "keyword",
-  trigger_config: { keywords: ["support", "help", "hi"], match_type: "contains" },
-  entry_node_id: "start",
+  icon: 'MessageSquare',
+  trigger_type: 'keyword',
+  trigger_config: {
+    keywords: ['support', 'help', 'hi'],
+    match_type: 'contains',
+  },
+  entry_node_id: 'start',
   nodes: [
     {
-      node_key: "start",
-      node_type: "start",
-      config: { next_node_key: "welcome" },
+      node_key: 'start',
+      node_type: 'start',
+      config: { next_node_key: 'welcome' },
     },
     {
-      node_key: "welcome",
-      node_type: "send_buttons",
+      node_key: 'welcome',
+      node_type: 'send_buttons',
       config: {
-        text: "Hi! 👋 Welcome to support. Are you an existing customer or new here?",
-        footer_text: "Tap a button below to continue.",
+        text: 'Hi! 👋 Welcome to support. Are you an existing customer or new here?',
+        footer_text: 'Tap a button below to continue.',
         buttons: [
           {
-            reply_id: "existing",
-            title: "Existing customer",
-            next_node_key: "existing_handoff",
+            reply_id: 'existing',
+            title: 'Existing customer',
+            next_node_key: 'existing_handoff',
           },
           {
-            reply_id: "new",
-            title: "New customer",
-            next_node_key: "new_handoff",
+            reply_id: 'new',
+            title: 'New customer',
+            next_node_key: 'new_handoff',
           },
         ],
       } as SendButtonsNodeConfig,
     },
     {
-      node_key: "existing_handoff",
-      node_type: "handoff",
+      node_key: 'existing_handoff',
+      node_type: 'handoff',
       config: {
-        note: "Existing customer needs assistance — please check account history before replying.",
+        note: 'Existing customer needs assistance — please check account history before replying.',
       } as HandoffNodeConfig,
     },
     {
-      node_key: "new_handoff",
-      node_type: "handoff",
+      node_key: 'new_handoff',
+      node_type: 'handoff',
       config: {
-        note: "New customer — share pricing + onboarding link.",
+        note: 'New customer — share pricing + onboarding link.',
       } as HandoffNodeConfig,
     },
   ],
@@ -126,57 +129,57 @@ const WELCOME_MENU: FlowTemplate = {
 // 2. FAQ bot — list-message answers, fully automated
 // ============================================================
 const FAQ_BOT: FlowTemplate = {
-  slug: "faq_bot",
-  name: "FAQ bot",
+  slug: 'faq_bot',
+  name: 'FAQ bot',
   description:
-    "Answer common questions automatically. Customer picks a topic from a list; the bot replies with the answer and ends.",
-  icon: "HelpCircle",
-  trigger_type: "keyword",
+    'Answer common questions automatically. Customer picks a topic from a list; the bot replies with the answer and ends.',
+  icon: 'HelpCircle',
+  trigger_type: 'keyword',
   trigger_config: {
-    keywords: ["faq", "question", "info"],
-    match_type: "contains",
+    keywords: ['faq', 'question', 'info'],
+    match_type: 'contains',
   },
-  entry_node_id: "start",
+  entry_node_id: 'start',
   nodes: [
     {
-      node_key: "start",
-      node_type: "start",
-      config: { next_node_key: "topics" },
+      node_key: 'start',
+      node_type: 'start',
+      config: { next_node_key: 'topics' },
     },
     {
-      node_key: "topics",
-      node_type: "send_list",
+      node_key: 'topics',
+      node_type: 'send_list',
       config: {
-        text: "What can I help you with?",
-        button_label: "View topics",
+        text: 'What can I help you with?',
+        button_label: 'View topics',
         sections: [
           {
-            title: "Common questions",
+            title: 'Common questions',
             rows: [
               {
-                reply_id: "hours",
-                title: "Opening hours",
-                next_node_key: "answer_hours",
+                reply_id: 'hours',
+                title: 'Opening hours',
+                next_node_key: 'answer_hours',
               },
               {
-                reply_id: "pricing",
-                title: "Pricing",
-                next_node_key: "answer_pricing",
+                reply_id: 'pricing',
+                title: 'Pricing',
+                next_node_key: 'answer_pricing',
               },
               {
-                reply_id: "refunds",
-                title: "Refund policy",
-                next_node_key: "answer_refunds",
+                reply_id: 'refunds',
+                title: 'Refund policy',
+                next_node_key: 'answer_refunds',
               },
             ],
           },
           {
-            title: "Other",
+            title: 'Other',
             rows: [
               {
-                reply_id: "human",
-                title: "Talk to a human",
-                next_node_key: "human_handoff",
+                reply_id: 'human',
+                title: 'Talk to a human',
+                next_node_key: 'human_handoff',
               },
             ],
           },
@@ -184,39 +187,39 @@ const FAQ_BOT: FlowTemplate = {
       } as SendListNodeConfig,
     },
     {
-      node_key: "answer_hours",
-      node_type: "send_message",
+      node_key: 'answer_hours',
+      node_type: 'send_message',
       config: {
         text: "We're open Mon–Fri, 9am–6pm local time. Weekend support is limited to urgent issues.",
-        next_node_key: "end",
+        next_node_key: 'end',
       } as SendMessageNodeConfig,
     },
     {
-      node_key: "answer_pricing",
-      node_type: "send_message",
+      node_key: 'answer_pricing',
+      node_type: 'send_message',
       config: {
-        text: "Our pricing starts at $9/mo. Visit https://example.com/pricing for the full breakdown.",
-        next_node_key: "end",
+        text: 'Our pricing starts at $9/mo. Visit https://example.com/pricing for the full breakdown.',
+        next_node_key: 'end',
       } as SendMessageNodeConfig,
     },
     {
-      node_key: "answer_refunds",
-      node_type: "send_message",
+      node_key: 'answer_refunds',
+      node_type: 'send_message',
       config: {
         text: "Refunds are honored within 30 days of purchase. Reply with your order number and we'll process it.",
-        next_node_key: "end",
+        next_node_key: 'end',
       } as SendMessageNodeConfig,
     },
     {
-      node_key: "human_handoff",
-      node_type: "handoff",
+      node_key: 'human_handoff',
+      node_type: 'handoff',
       config: {
-        note: "Customer asked to talk to a human from the FAQ bot.",
+        note: 'Customer asked to talk to a human from the FAQ bot.',
       } as HandoffNodeConfig,
     },
     {
-      node_key: "end",
-      node_type: "end",
+      node_key: 'end',
+      node_type: 'end',
       config: {},
     },
   ],
@@ -226,60 +229,60 @@ const FAQ_BOT: FlowTemplate = {
 // 3. Lead capture — collect_input chain, ends in a handoff
 // ============================================================
 const LEAD_CAPTURE: FlowTemplate = {
-  slug: "lead_capture",
-  name: "Lead capture",
+  slug: 'lead_capture',
+  name: 'Lead capture',
   description:
-    "Greet first-time inbounds, capture name + email + company, then hand off to sales with the answers in the note.",
-  icon: "UserPlus",
-  trigger_type: "first_inbound_message",
+    'Greet first-time inbounds, capture name + email + company, then hand off to sales with the answers in the note.',
+  icon: 'UserPlus',
+  trigger_type: 'first_inbound_message',
   trigger_config: {},
-  entry_node_id: "start",
+  entry_node_id: 'start',
   nodes: [
     {
-      node_key: "start",
-      node_type: "start",
-      config: { next_node_key: "intro" },
+      node_key: 'start',
+      node_type: 'start',
+      config: { next_node_key: 'intro' },
     },
     {
-      node_key: "intro",
-      node_type: "send_message",
+      node_key: 'intro',
+      node_type: 'send_message',
       config: {
         text: "Welcome! 👋 I'll ask a few quick questions so we can get you to the right person.",
-        next_node_key: "ask_name",
+        next_node_key: 'ask_name',
       } as SendMessageNodeConfig,
     },
     {
-      node_key: "ask_name",
-      node_type: "collect_input",
+      node_key: 'ask_name',
+      node_type: 'collect_input',
       config: {
         prompt_text: "What's your name?",
-        var_key: "name",
-        next_node_key: "ask_email",
+        var_key: 'name',
+        next_node_key: 'ask_email',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "ask_email",
-      node_type: "collect_input",
+      node_key: 'ask_email',
+      node_type: 'collect_input',
       config: {
         prompt_text: "Thanks {{vars.name}}! What's your work email?",
-        var_key: "email",
-        next_node_key: "ask_company",
+        var_key: 'email',
+        next_node_key: 'ask_company',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "ask_company",
-      node_type: "collect_input",
+      node_key: 'ask_company',
+      node_type: 'collect_input',
       config: {
         prompt_text: "Almost done — what's your company name?",
-        var_key: "company",
-        next_node_key: "handoff",
+        var_key: 'company',
+        next_node_key: 'handoff',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "handoff",
-      node_type: "handoff",
+      node_key: 'handoff',
+      node_type: 'handoff',
       config: {
-        note: "New lead — name={{vars.name}}, email={{vars.email}}, company={{vars.company}}.",
+        note: 'New lead — name={{vars.name}}, email={{vars.email}}, company={{vars.company}}.',
       } as HandoffNodeConfig,
     },
   ],
@@ -289,141 +292,165 @@ const LEAD_CAPTURE: FlowTemplate = {
 // 4. Travel enquiry — SAVR-ready questionnaire using WACRM flows
 // ============================================================
 const TRAVEL_ENQUIRY: FlowTemplate = {
-  slug: "travel_enquiry_whatsapp",
-  name: "Travel Enquiry WhatsApp Flow",
+  slug: 'travel_enquiry_whatsapp',
+  name: 'Travel Enquiry WhatsApp Flow',
   description:
-    "Collect a deterministic travel enquiry over WhatsApp. Destination master lookup, destination PDFs, and SAVR CRM linkage require the SAVR integration.",
-  icon: "MessageSquare",
-  trigger_type: "keyword",
+    'Collect a travel enquiry using live destination choices and destination PDFs from Travel CRM.',
+  icon: 'MessageSquare',
+  trigger_type: 'keyword',
   trigger_config: {
-    keywords: ["hi", "hello", "hey"],
-    match_type: "exact",
+    keywords: ['hi', 'hello', 'hey'],
+    match_type: 'exact',
     once_per_contact: true,
   },
-  entry_node_id: "start",
+  entry_node_id: 'start',
   nodes: [
     {
-      node_key: "start",
-      node_type: "start",
-      config: { next_node_key: "welcome" },
+      node_key: 'start',
+      node_type: 'start',
+      config: { next_node_key: 'welcome' },
     },
     {
-      node_key: "welcome",
-      node_type: "send_buttons",
+      node_key: 'welcome',
+      node_type: 'send_buttons',
       config: {
-        text: "Welcome! How can we help you?",
+        text: 'Welcome! How can we help you?',
         buttons: [
-          { reply_id: "domestic", title: "Domestic", next_node_key: "domestic_destination" },
-          { reply_id: "international", title: "International", next_node_key: "international_destination" },
-          { reply_id: "speak_to_agent", title: "Speak to Agent", next_node_key: "agent_handoff" },
+          {
+            reply_id: 'domestic',
+            title: 'Domestic',
+            next_node_key: 'destination_picker',
+            set_vars: { destination_scope: 'domestic', destination_page: '0' },
+          },
+          {
+            reply_id: 'international',
+            title: 'International',
+            next_node_key: 'destination_picker',
+            set_vars: {
+              destination_scope: 'international',
+              destination_page: '0',
+            },
+          },
+          {
+            reply_id: 'speak_to_agent',
+            title: 'Speak to Agent',
+            next_node_key: 'agent_handoff',
+          },
         ],
       } as SendButtonsNodeConfig,
     },
     {
-      node_key: "domestic_destination",
-      node_type: "collect_input",
+      node_key: 'destination_picker',
+      node_type: 'send_list',
       config: {
-        prompt_text: "Which domestic destination are you interested in?",
-        var_key: "destination",
-        next_node_key: "ask_name",
-      } as CollectInputNodeConfig,
+        text: 'Choose a destination:',
+        button_label: 'View destinations',
+        dynamic_destinations: true,
+        destination_scope_var: 'destination_scope',
+        selection_next_node_key: 'ask_name',
+        sections: [
+          {
+            title: 'Destinations',
+            rows: [
+              {
+                reply_id: 'destination-placeholder',
+                title: 'Destination',
+                next_node_key: 'ask_name',
+              },
+            ],
+          },
+        ],
+      } as SendListNodeConfig,
     },
     {
-      node_key: "international_destination",
-      node_type: "collect_input",
+      node_key: 'agent_handoff',
+      node_type: 'handoff',
       config: {
-        prompt_text: "Which international destination are you interested in?",
-        var_key: "destination",
-        next_node_key: "ask_name",
-      } as CollectInputNodeConfig,
-    },
-    {
-      node_key: "agent_handoff",
-      node_type: "handoff",
-      config: {
-        note: "Customer requested a travel agent.",
+        note: 'Customer requested a travel agent.',
       } as HandoffNodeConfig,
     },
     {
-      node_key: "ask_name",
-      node_type: "collect_input",
+      node_key: 'ask_name',
+      node_type: 'collect_input',
       config: {
-        prompt_text: "May I know your name?",
-        var_key: "name",
-        next_node_key: "ask_travel_date",
+        prompt_text: 'May I know your name?',
+        var_key: 'name',
+        next_node_key: 'ask_travel_date',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "ask_travel_date",
-      node_type: "collect_input",
+      node_key: 'ask_travel_date',
+      node_type: 'collect_input',
       config: {
-        prompt_text: "When are you planning to travel?",
-        var_key: "travel_date",
-        next_node_key: "ask_adults",
+        prompt_text: 'When are you planning to travel?',
+        var_key: 'travel_date',
+        next_node_key: 'ask_adults',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "ask_adults",
-      node_type: "collect_input",
+      node_key: 'ask_adults',
+      node_type: 'collect_input',
       config: {
-        prompt_text: "How many adults will be travelling?",
-        var_key: "adults",
-        validation: "number",
+        prompt_text: 'How many adults will be travelling?',
+        var_key: 'adults',
+        validation: 'number',
         min_value: 1,
-        invalid_input_message: "Please enter a valid number of adults (1 or more).",
-        next_node_key: "ask_children",
+        invalid_input_message:
+          'Please enter a valid number of adults (1 or more).',
+        next_node_key: 'ask_children',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "ask_children",
-      node_type: "collect_input",
+      node_key: 'ask_children',
+      node_type: 'collect_input',
       config: {
-        prompt_text: "How many children will be travelling?",
-        var_key: "children",
-        validation: "number",
+        prompt_text: 'How many children will be travelling?',
+        var_key: 'children',
+        validation: 'number',
         min_value: 0,
-        invalid_input_message: "Please enter a valid number of children (0 or more).",
-        next_node_key: "ask_departure_city",
+        invalid_input_message:
+          'Please enter a valid number of children (0 or more).',
+        next_node_key: 'ask_departure_city',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "ask_departure_city",
-      node_type: "collect_input",
+      node_key: 'ask_departure_city',
+      node_type: 'collect_input',
       config: {
-        prompt_text: "Which city will you be travelling from?",
-        var_key: "departure_city",
-        next_node_key: "ask_budget",
+        prompt_text: 'Which city will you be travelling from?',
+        var_key: 'departure_city',
+        next_node_key: 'ask_budget',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "ask_budget",
-      node_type: "collect_input",
+      node_key: 'ask_budget',
+      node_type: 'collect_input',
       config: {
-        prompt_text: "What is your approximate budget for the trip?",
-        var_key: "budget",
-        next_node_key: "ask_special_requirements",
+        prompt_text: 'What is your approximate budget for the trip?',
+        var_key: 'budget',
+        next_node_key: 'ask_special_requirements',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "ask_special_requirements",
-      node_type: "collect_input",
+      node_key: 'ask_special_requirements',
+      node_type: 'collect_input',
       config: {
-        prompt_text: "Do you have any special requirements or preferences?",
-        var_key: "special_requirements",
-        next_node_key: "complete",
+        prompt_text: 'Do you have any special requirements or preferences?',
+        var_key: 'special_requirements',
+        next_node_key: 'complete',
       } as CollectInputNodeConfig,
     },
     {
-      node_key: "complete",
-      node_type: "send_message",
+      node_key: 'complete',
+      node_type: 'send_message',
       config: {
         text: "Thank you! We've received your travel requirements. Our team will get back to you shortly.",
-        next_node_key: "end",
+        next_node_key: 'end',
       } as SendMessageNodeConfig,
     },
     {
-      node_key: "end",
-      node_type: "end",
+      node_key: 'end',
+      node_type: 'end',
       config: {},
     },
   ],

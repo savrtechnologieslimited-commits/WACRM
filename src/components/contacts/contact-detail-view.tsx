@@ -42,7 +42,8 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
-import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+import { parseValidPhoneNumber } from '@/lib/phone-number';
+import { PhoneNumberInput } from '@/components/phone-number-input';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -205,12 +206,11 @@ export function ContactDetailView({
       return;
     }
 
-    // Same rule as the create form: a changed number must start with `+`
-    // and a country code (issue #586). Unchanged numbers — including the
-    // digits-only form the inbound webhook stores — are left alone so a
-    // name/email edit is never blocked by the phone field.
     const phoneChanged = editPhone.trim() !== (contact?.phone ?? '');
-    if (phoneChanged && !parseInternationalPhone(editPhone)) {
+    const normalizedPhone = phoneChanged
+      ? parseValidPhoneNumber(editPhone)
+      : editPhone.trim();
+    if (!normalizedPhone) {
       toast.error(t('toastPhoneNeedsCountryCode'));
       return;
     }
@@ -220,7 +220,7 @@ export function ContactDetailView({
       .from('contacts')
       .update({
         name: editName.trim() || null,
-        phone: editPhone.trim(),
+        phone: normalizedPhone,
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,
         updated_at: new Date().toISOString(),
@@ -466,31 +466,31 @@ export function ContactDetailView({
               <TabsList className="bg-muted/50 border-b border-border mx-4 mt-3">
                 <TabsTrigger
                   value="details"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  className="data-active:bg-card data-active:text-primary text-muted-foreground"
                 >
                   {t('tabs.details')}
                 </TabsTrigger>
                 <TabsTrigger
                   value="tags"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  className="data-active:bg-card data-active:text-primary text-muted-foreground"
                 >
                   {t('tabs.tags')}
                 </TabsTrigger>
                 <TabsTrigger
                   value="notes"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  className="data-active:bg-card data-active:text-primary text-muted-foreground"
                 >
                   {t('tabs.notes')}
                 </TabsTrigger>
                 <TabsTrigger
                   value="custom"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  className="data-active:bg-card data-active:text-primary text-muted-foreground"
                 >
                   {t('tabs.custom')}
                 </TabsTrigger>
                 <TabsTrigger
                   value="deals"
-                  className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  className="data-active:bg-card data-active:text-primary text-muted-foreground"
                 >
                   {t('tabs.deals')}
                 </TabsTrigger>
@@ -508,13 +508,14 @@ export function ContactDetailView({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs">
+                    <Label htmlFor="contact-detail-phone" className="text-muted-foreground text-xs">
                       {t('phone')} <span className="text-red-400">*</span>
                     </Label>
-                    <Input
+                    <PhoneNumberInput
+                      id="contact-detail-phone"
                       value={editPhone}
-                      onChange={(e) => setEditPhone(e.target.value)}
-                      className="bg-muted border-border text-foreground h-8 text-sm"
+                      onChange={setEditPhone}
+                      required
                     />
                   </div>
                   <div className="space-y-1.5">

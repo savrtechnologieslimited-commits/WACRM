@@ -5,8 +5,8 @@ describe('parseBroadcastCsv', () => {
   it('parses phone + name into the audience shape', () => {
     const result = parseBroadcastCsv(
       `phone,name
-+15551230000,Ada
-+15559990000,Grace`
++14155552671,Ada
++14155552672,Grace`
     );
 
     expect(result).toEqual({
@@ -14,42 +14,42 @@ describe('parseBroadcastCsv', () => {
       duplicates: 0,
       invalid: 0,
       contacts: [
-        { phone: '+15551230000', name: 'Ada' },
-        { phone: '+15559990000', name: 'Grace' },
+        { phone: '+14155552671', name: 'Ada' },
+        { phone: '+14155552672', name: 'Grace' },
       ],
     });
   });
 
   it('omits name when the column is absent', () => {
-    const result = parseBroadcastCsv(`phone\n+15551230000`);
+    const result = parseBroadcastCsv(    `phone\n+14155552671`);
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
       invalid: 0,
-      contacts: [{ phone: '+15551230000' }],
+      contacts: [{ phone: '+14155552671' }],
     });
   });
 
   it('drops the extra columns the importer understands', () => {
     const result = parseBroadcastCsv(
       `phone,name,email,company,tags
-+15551230000,Ada,ada@example.com,Analytical Engines,"VIP, Lead"`
++14155552671,Ada,ada@example.com,Analytical Engines,"VIP, Lead"`
     );
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
       invalid: 0,
-      contacts: [{ phone: '+15551230000', name: 'Ada' }],
+      contacts: [{ phone: '+14155552671', name: 'Ada' }],
     });
   });
 
   it('tolerates any column order', () => {
-    const result = parseBroadcastCsv(`name,phone\nAda,+15551230000`);
+    const result = parseBroadcastCsv(    `name,phone\nAda,+14155552671`);
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
       invalid: 0,
-      contacts: [{ phone: '+15551230000', name: 'Ada' }],
+      contacts: [{ phone: '+14155552671', name: 'Ada' }],
     });
   });
 
@@ -60,42 +60,45 @@ describe('parseBroadcastCsv', () => {
   it('collapses differently-formatted spellings of the same number', () => {
     const result = parseBroadcastCsv(
       `phone,name
-+1 (555) 123-0000,Ada
-+1-555-123-0000,Ada Again`
++1 (415) 555-2671,Ada
++1-415-555-2671,Ada Again`
     );
 
     expect(result).toEqual({
       ok: true,
       duplicates: 1,
       invalid: 0,
-      contacts: [{ phone: '+1 (555) 123-0000', name: 'Ada' }],
+      contacts: [{ phone: '+14155552671', name: 'Ada' }],
     });
   });
 
-  // A national-format number has no country code, so Meta reads its
-  // leading digits as one: "4155551212" (US) is delivered to +41
-  // (Switzerland). Rows without a leading `+` are refused and counted,
-  // not silently dropped, so a whole-file export from a spreadsheet that
-  // stripped the `+` is visible to the user before anything is sent
-  // (issue #586).
-  it('rejects rows without a leading + and reports them as invalid', () => {
+  it('uses the selected default country and rejects invalid national lengths', () => {
     const result = parseBroadcastCsv(
       `phone,name
-4155551212,National US
-+14155551212,Ada
-9876543210,National IN`
+9876543210,National IN
+987654321,Bad short
+09876543210,Bad long`,
     );
 
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
       invalid: 2,
-      contacts: [{ phone: '+14155551212', name: 'Ada' }],
+      contacts: [{ phone: '+919876543210', name: 'National IN' }],
     });
   });
 
-  it('reports no_valid_rows when every number lacks a country code', () => {
-    expect(parseBroadcastCsv(`phone,name\n4155551212,Ada`)).toEqual({
+  it('uses a non-India country when selected', () => {
+    expect(parseBroadcastCsv(`phone,name\n4155552671,Ada`, 'US')).toEqual({
+      ok: true,
+      duplicates: 0,
+      invalid: 0,
+      contacts: [{ phone: '+14155552671', name: 'Ada' }],
+    });
+  });
+
+  it('reports no_valid_rows when every number is invalid', () => {
+    expect(parseBroadcastCsv(`phone,name\n987654321,Ada`)).toEqual({
       ok: false,
       error: 'no_valid_rows',
     });
@@ -122,15 +125,15 @@ describe('parseBroadcastCsv', () => {
 
   it('handles CRLF line endings and a trailing newline', () => {
     const result = parseBroadcastCsv(
-      'phone,name\r\n+15551230000,Ada\r\n+15559990000,Grace\r\n'
+      'phone,name\r\n+14155552671,Ada\r\n+14155552672,Grace\r\n'
     );
     expect(result).toEqual({
       ok: true,
       duplicates: 0,
       invalid: 0,
       contacts: [
-        { phone: '+15551230000', name: 'Ada' },
-        { phone: '+15559990000', name: 'Grace' },
+        { phone: '+14155552671', name: 'Ada' },
+        { phone: '+14155552672', name: 'Grace' },
       ],
     });
   });

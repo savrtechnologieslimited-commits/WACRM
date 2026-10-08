@@ -412,6 +412,18 @@ function validateNode(
             next_node_key?: string;
           }>;
         }>;
+        dynamic_source_var?: string;
+        dynamic_title_field?: string;
+        dynamic_reply_id_field?: string;
+        dynamic_description_field?: string;
+        dynamic_assigned_employee_id_field?: string;
+        selected_id_var?: string;
+        selected_title_var?: string;
+        selected_item_var?: string;
+        selected_assigned_employee_id_var?: string;
+        dynamic_next_node_key?: string;
+        include_none_option?: boolean;
+        none_next_node_key?: string;
       };
       if (!cfg.text?.trim()) {
         issues.push({
@@ -432,6 +444,91 @@ function validateNode(
         });
       }
       const sections = cfg.sections ?? [];
+      if (cfg.dynamic_source_var?.trim()) {
+        const pathPattern = /^[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*$/;
+        const keyPattern = /^[a-zA-Z0-9_]+$/;
+        for (const [field, value] of [
+          ["dynamic_source_var", cfg.dynamic_source_var],
+          ["dynamic_title_field", cfg.dynamic_title_field],
+          ["dynamic_reply_id_field", cfg.dynamic_reply_id_field],
+          ["dynamic_assigned_employee_id_field", cfg.dynamic_assigned_employee_id_field],
+        ] as const) {
+          if (!value?.trim() || !pathPattern.test(value)) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field,
+              message: `Dynamic send-list needs a valid ${field.replaceAll("_", " ")}.`,
+            });
+          }
+        }
+        if (
+          cfg.dynamic_description_field?.trim() &&
+          !pathPattern.test(cfg.dynamic_description_field)
+        ) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "dynamic_description_field",
+            message: "Dynamic list description field must be a valid property path.",
+          });
+        }
+        for (const [field, value] of [
+          ["selected_id_var", cfg.selected_id_var],
+          ["selected_title_var", cfg.selected_title_var],
+          ["selected_item_var", cfg.selected_item_var],
+          ["selected_assigned_employee_id_var", cfg.selected_assigned_employee_id_var],
+        ] as const) {
+          if (!value?.trim() || !keyPattern.test(value)) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field,
+              message: `Dynamic send-list needs a valid ${field.replaceAll("_", " ")}.`,
+            });
+          }
+        }
+        if (!cfg.dynamic_next_node_key) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "dynamic_next_node_key",
+            message: "Dynamic send-list needs a next node.",
+          });
+        } else if (!knownKeys.has(cfg.dynamic_next_node_key)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "dynamic_next_node_key",
+            message: `Dynamic send-list points to non-existent node "${cfg.dynamic_next_node_key}".`,
+          });
+        }
+        if (cfg.include_none_option) {
+          if (!cfg.none_next_node_key) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "none_next_node_key",
+              message: "Dynamic send-list with a None option needs a None-path node.",
+            });
+          } else if (!knownKeys.has(cfg.none_next_node_key)) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "none_next_node_key",
+              message: `Dynamic send-list points to non-existent None-path node "${cfg.none_next_node_key}".`,
+            });
+          }
+        }
+        break;
+      }
       const totalRows = sections.reduce(
         (sum, s) => sum + (s.rows?.length ?? 0),
         0,
@@ -529,6 +626,135 @@ function validateNode(
           }
         });
       });
+      break;
+    }
+
+    case "travel_crm_get_destinations":
+    case "travel_crm_get_destination":
+    case "travel_crm_complete_enquiry": {
+      const cfg = node.config as {
+        travel_type?: string;
+        destination_id_var?: string;
+        travel_type_var?: string;
+        destination_var?: string;
+        variable_map?: Record<string, string>;
+        result_var?: string;
+        error_var?: string;
+        success_next_node_key?: string;
+        error_next_node_key?: string;
+      };
+      for (const [field, target] of [
+        ["success_next_node_key", cfg.success_next_node_key],
+        ["error_next_node_key", cfg.error_next_node_key],
+      ] as const) {
+        if (!target) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field,
+            message: `Travel CRM action needs a ${field === "success_next_node_key" ? "success" : "failure"} node.`,
+          });
+        } else if (!knownKeys.has(target)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field,
+            message: `Travel CRM action points to non-existent node "${target}".`,
+          });
+        }
+      }
+      if (!cfg.result_var?.trim() || !/^[a-zA-Z0-9_]+$/.test(cfg.result_var)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "result_var",
+          message: "Travel CRM action needs a valid result variable key.",
+        });
+      }
+      if (!cfg.error_var?.trim() || !/^[a-zA-Z0-9_]+$/.test(cfg.error_var)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "error_var",
+          message: "Travel CRM action needs a valid error variable key.",
+        });
+      }
+      if (cfg.result_var && cfg.result_var === cfg.error_var) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "error_var",
+          message: "Travel CRM result and error variables must be different.",
+        });
+      }
+      if (
+        node.node_type === "travel_crm_get_destinations" &&
+        cfg.travel_type !== "domestic" &&
+        cfg.travel_type !== "international"
+      ) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "travel_type",
+          message: "Choose Domestic or International for the destination lookup.",
+        });
+      }
+      if (
+        node.node_type === "travel_crm_get_destination" &&
+        (!cfg.destination_id_var?.trim() ||
+          !/^[a-zA-Z0-9_]+$/.test(cfg.destination_id_var) ||
+          !cfg.travel_type_var?.trim() ||
+          !/^[a-zA-Z0-9_]+$/.test(cfg.travel_type_var))
+      ) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "destination_id_var",
+          message: "Destination lookup needs valid destination ID and travel type variables.",
+        });
+      }
+      if (node.node_type === "travel_crm_complete_enquiry") {
+        const requiredFields = [
+          "customer_name",
+          "travel_date",
+          "adults",
+          "children",
+          "departure_city",
+          "budget",
+          "special_requirements",
+        ];
+        for (const field of requiredFields) {
+          const source = cfg.variable_map?.[field];
+          if (!source || !/^[a-zA-Z0-9_]+$/.test(source)) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: `variable_map.${field}`,
+              message: `Map ${field.replaceAll("_", " ")} to a flow variable.`,
+            });
+          }
+        }
+        if (
+          !cfg.destination_var?.trim() ||
+          !/^[a-zA-Z0-9_]+$/.test(cfg.destination_var)
+        ) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "destination_var",
+            message: "Complete enquiry needs the destination result variable.",
+          });
+        }
+      }
       break;
     }
 
@@ -755,6 +981,17 @@ function outgoingEdges(node: NodeInput): string[] {
       const cfg = node.config as { next_node_key?: string };
       return cfg.next_node_key ? [cfg.next_node_key] : [];
     }
+    case "travel_crm_get_destinations":
+    case "travel_crm_get_destination":
+    case "travel_crm_complete_enquiry": {
+      const cfg = node.config as {
+        success_next_node_key?: string;
+        error_next_node_key?: string;
+      };
+      return [cfg.success_next_node_key, cfg.error_next_node_key].filter(
+        (key): key is string => !!key,
+      );
+    }
     case "condition": {
       const cfg = node.config as {
         true_next?: string;
@@ -776,7 +1013,19 @@ function outgoingEdges(node: NodeInput): string[] {
     case "send_list": {
       const cfg = node.config as {
         sections?: Array<{ rows?: Array<{ next_node_key?: string }> }>;
+        dynamic_source_var?: string;
+        dynamic_next_node_key?: string;
+        include_none_option?: boolean;
+        none_next_node_key?: string;
       };
+      if (cfg.dynamic_source_var?.trim()) {
+        return [
+          ...(cfg.dynamic_next_node_key ? [cfg.dynamic_next_node_key] : []),
+          ...(cfg.include_none_option && cfg.none_next_node_key
+            ? [cfg.none_next_node_key]
+            : []),
+        ];
+      }
       const out: string[] = [];
       for (const s of cfg.sections ?? []) {
         for (const r of s.rows ?? []) {

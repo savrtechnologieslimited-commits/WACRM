@@ -38,6 +38,9 @@ import {
   Tag,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import type { CountryCode } from 'libphonenumber-js';
+import { PhoneCountrySelect } from '@/components/phone-number-input';
+import { Label } from '@/components/ui/label';
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
 const PREVIEW_LIMIT = 5;
@@ -132,6 +135,7 @@ export function ImportModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
+  const [importCountry, setImportCountry] = useState<CountryCode>('IN');
   const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
   const [hasCompanyColumn, setHasCompanyColumn] = useState(false);
@@ -150,6 +154,7 @@ export function ImportModal({
 
   function reset() {
     setFile(null);
+    setImportCountry('IN');
     setParsedRows([]);
     setHasTagsColumn(false);
     setHasCompanyColumn(false);
@@ -175,7 +180,7 @@ export function ImportModal({
       rows,
       hasTagsColumn: csvHasTags,
       hasCompanyColumn: csvHasCompany,
-    } = parseContactCsv(text);
+    } = parseContactCsv(text, importCountry);
 
     if (rows.length === 0) {
       toast.error(t('toastNoValidRows'));
@@ -467,6 +472,16 @@ export function ImportModal({
             />
           </DialogHeader>
 
+          <div className="mb-4 max-w-md space-y-2">
+            <Label htmlFor="import-default-country">
+              Default country for numbers without a country code
+            </Label>
+            <PhoneCountrySelect
+              value={importCountry}
+              onChange={setImportCountry}
+              disabled={Boolean(file) || importing}
+            />
+          </div>
           <div
             role="button"
             tabIndex={0}

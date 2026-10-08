@@ -21,6 +21,7 @@
 
 import { dedupeByPhone } from '@/lib/contacts/dedupe';
 import { parseContactCsv } from '@/lib/contacts/parse-contact-csv';
+import type { CountryCode } from 'libphonenumber-js';
 
 /** The shape the wizard hands to `createAndSendBroadcast`. */
 export interface BroadcastCsvContact {
@@ -41,16 +42,18 @@ export type ParseBroadcastCsvResult =
       /** Rows dropped as same-number repeats. */
       duplicates: number;
       /**
-       * Rows dropped because the number is blank or lacks a leading `+`
-       * and country code (issue #586). The wizard warns about these so
-       * a CSV of national-format numbers doesn't silently shrink.
+       * Rows dropped because the number is blank or invalid for the
+       * selected default country.
        */
       invalid: number;
     }
   | { ok: false; error: BroadcastCsvError };
 
-export function parseBroadcastCsv(text: string): ParseBroadcastCsvResult {
-  const { rows, hasPhoneColumn } = parseContactCsv(text);
+export function parseBroadcastCsv(
+  text: string,
+  defaultCountry: CountryCode = 'IN',
+): ParseBroadcastCsvResult {
+  const { rows, hasPhoneColumn } = parseContactCsv(text, defaultCountry);
 
   if (!hasPhoneColumn) return { ok: false, error: 'missing_phone_column' };
 

@@ -1,3 +1,7 @@
+import type { CountryCode } from 'libphonenumber-js';
+
+import { parseValidPhoneNumber } from '@/lib/phone-number';
+
 /**
  * CSV parsing for the contacts import modal. Shared + unit-tested so
  * tag-column handling stays aligned with phone/name/email/company.
@@ -46,7 +50,10 @@ export interface ParseContactCsvResult {
   hasCompanyColumn: boolean;
 }
 
-export function parseContactCsv(text: string): ParseContactCsvResult {
+export function parseContactCsv(
+  text: string,
+  defaultCountry: CountryCode = 'IN',
+): ParseContactCsvResult {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) {
     return {
@@ -89,7 +96,10 @@ export function parseContactCsv(text: string): ParseContactCsvResult {
     // it there means the import result can tell the user "N contacts
     // had no phone" instead of the row just vanishing with the total
     // row count silently short of what's actually in the file.
-    const phone = values[phoneIdx]?.replace(/["']/g, '').trim() ?? '';
+    const rawPhone = values[phoneIdx]?.replace(/["']/g, '').trim() ?? '';
+    const phone = rawPhone
+      ? parseValidPhoneNumber(rawPhone, defaultCountry) ?? rawPhone
+      : '';
 
     rows.push({
       phone,

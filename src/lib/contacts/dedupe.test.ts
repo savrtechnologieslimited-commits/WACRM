@@ -48,32 +48,31 @@ describe("isUniqueViolation", () => {
 describe("dedupeByPhone", () => {
   it("keeps the first occurrence and counts in-file duplicates", () => {
     const { unique, duplicates } = dedupeByPhone([
-      { phone: "+1 555-1111", name: "A" },
-      { phone: "+1 (555) 1111", name: "B" }, // same digits as #1
-      { phone: "+1 555-2222", name: "C" },
+      { phone: "+1 415-555-2671", name: "A" },
+      { phone: "+1 (415) 555-2671", name: "B" },
+      { phone: "+1 415-555-2672", name: "C" },
     ]);
     expect(unique.map((r) => r.name)).toEqual(["A", "C"]);
     expect(duplicates).toBe(1);
   });
 
-  it("drops rows without a leading + (no country code), counted as invalid", () => {
-    // "4155551212" is a US national number to the person who exported the
-    // CSV, but Meta would deliver it to +41 (Switzerland). Refusing it here
-    // is the bulk-import half of issue #586.
+  it("uses India for local numbers and validates their exact national length", () => {
     const { unique, duplicates, invalid } = dedupeByPhone([
-      { phone: "4155551212", name: "national" },
-      { phone: "+14155551212", name: "international" },
-      { phone: "14155551212", name: "digits with CC but no +" },
+      { phone: "9876543210", name: "national" },
+      { phone: "+919876543210", name: "same number" },
+      { phone: "987654321", name: "too short" },
+      { phone: "09876543210", name: "too long" },
+      { phone: "+14155552671", name: "international" },
     ]);
-    expect(unique.map((r) => r.name)).toEqual(["international"]);
-    expect(duplicates).toBe(0);
+    expect(unique.map((r) => r.name)).toEqual(["national", "international"]);
+    expect(duplicates).toBe(1);
     expect(invalid).toBe(2);
   });
 
   it("drops rows with no digits, counted as invalid rather than duplicate", () => {
     const { unique, duplicates, invalid } = dedupeByPhone([
       { phone: "   " },
-      { phone: "+1 555-3333" },
+      { phone: "+1 415-555-2673" },
     ]);
     expect(unique).toHaveLength(1);
     expect(duplicates).toBe(0);

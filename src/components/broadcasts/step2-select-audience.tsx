@@ -18,6 +18,9 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import type { CountryCode } from 'libphonenumber-js';
+import { PhoneCountrySelect } from '@/components/phone-number-input';
+import { Label } from '@/components/ui/label';
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -100,6 +103,7 @@ export function Step2SelectAudience({
   // themselves live on `audience.csvContacts` (owned by the wizard) so
   // they survive stepping forward and back.
   const [pickedCsvName, setPickedCsvName] = useState<string | null>(null);
+  const [csvCountry, setCsvCountry] = useState<CountryCode>('IN');
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   const csvCount = audience.csvContacts?.length ?? 0;
@@ -297,7 +301,7 @@ export function Step2SelectAudience({
     const selected = e.target.files?.[0];
     if (!selected) return;
 
-    const result = parseBroadcastCsv(await selected.text());
+    const result = parseBroadcastCsv(await selected.text(), csvCountry);
 
     if (!result.ok) {
       toast.error(
@@ -313,9 +317,6 @@ export function Step2SelectAudience({
       return;
     }
 
-    // Rows without a leading `+` and country code were refused (issue
-    // #586). Say so, or a spreadsheet export that stripped the `+` looks
-    // like a mysteriously smaller audience.
     if (result.invalid > 0) {
       toast.warning(
         t('selectAudience.csvInvalidPhones', { count: result.invalid }),
@@ -368,6 +369,17 @@ export function Step2SelectAudience({
         <p className="mt-1 text-sm text-muted-foreground">
           {t('selectAudience.subtitle')}
         </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="broadcast-csv-country">
+          Default country for numbers without a country code
+        </Label>
+        <PhoneCountrySelect
+          value={csvCountry}
+          onChange={setCsvCountry}
+          disabled={csvCount > 0}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -27,8 +27,8 @@ describe('parseTagCell', () => {
 describe('parseContactCsv', () => {
   it('parses optional tags column', () => {
     const csv = `phone,name,tags
-+15551234567,Alice,"VIP, Lead"
-+15559876543,Bob,Customer`;
++14155552671,Alice,"VIP, Lead"
++14155552672,Bob,Customer`;
 
     expect(parseContactCsv(csv)).toEqual({
       hasPhoneColumn: true,
@@ -36,14 +36,14 @@ describe('parseContactCsv', () => {
       hasCompanyColumn: false,
       rows: [
         {
-          phone: '+15551234567',
+          phone: '+14155552671',
           name: 'Alice',
           email: undefined,
           company: undefined,
           tagNames: ['VIP', 'Lead'],
         },
         {
-          phone: '+15559876543',
+          phone: '+14155552672',
           name: 'Bob',
           email: undefined,
           company: undefined,
@@ -55,7 +55,7 @@ describe('parseContactCsv', () => {
 
   it('keeps a row with an empty phone cell instead of dropping it silently', () => {
     const csv = `phone,name
-+15551234567,Alice
++14155552671,Alice
 ,Bob`;
 
     const { rows } = parseContactCsv(csv);
@@ -71,7 +71,7 @@ describe('parseContactCsv', () => {
 
   it('returns empty tagNames when tags column is absent', () => {
     const csv = `phone,name
-+15551234567,Alice`;
++14155552671,Alice`;
 
     expect(parseContactCsv(csv)).toEqual({
       hasPhoneColumn: true,
@@ -79,7 +79,7 @@ describe('parseContactCsv', () => {
       hasCompanyColumn: false,
       rows: [
         {
-          phone: '+15551234567',
+          phone: '+14155552671',
           name: 'Alice',
           email: undefined,
           company: undefined,
@@ -87,5 +87,23 @@ describe('parseContactCsv', () => {
         },
       ],
     });
+  });
+
+  it('normalizes local numbers using the selected country and preserves invalid rows', () => {
+    const csv = `phone,name
+  9876543210,Alice
+  987654321,Bob
+  4155552671,Carol`;
+
+    expect(parseContactCsv(csv).rows.map((row) => row.phone)).toEqual([
+      '+919876543210',
+      '987654321',
+      '+914155552671',
+    ]);
+    expect(parseContactCsv(csv, 'US').rows.map((row) => row.phone)).toEqual([
+      '9876543210',
+      '987654321',
+      '+14155552671',
+    ]);
   });
 });

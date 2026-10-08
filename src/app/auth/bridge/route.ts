@@ -42,6 +42,16 @@ export async function POST(request: NextRequest) {
   if (typeof token !== 'string' || !token) {
     return bridgeError('The CRM sign-in token is missing.', 400);
   }
+  const requestedContactId = formData.get('contact_id');
+  if (
+    requestedContactId !== null &&
+    (typeof requestedContactId !== 'string' ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        requestedContactId
+      ))
+  ) {
+    return bridgeError('The requested WACRM contact is invalid.', 400);
+  }
 
   let claims;
   try {
@@ -94,7 +104,7 @@ export async function POST(request: NextRequest) {
 
   const { data: existingProfile, error: profileError } = await admin
     .from('profiles')
-    .select('user_id')
+    .select('user_id, account_id')
     .eq('email', claims.email)
     .maybeSingle();
   if (profileError) {
@@ -103,6 +113,27 @@ export async function POST(request: NextRequest) {
       profileError
     );
     return bridgeError('WACRM could not complete sign-in.', 500);
+  }
+  if (requestedContactId) {
+    if (!existingProfile?.account_id) {
+      return bridgeError('The requested WACRM contact was not found.', 404);
+    }
+    const { data: contact, error: contactError } = await admin
+      .from('contacts')
+      .select('id')
+      .eq('id', requestedContactId)
+      .eq('account_id', existingProfile.account_id)
+      .maybeSingle();
+    if (contactError) {
+      console.error(
+        '[POST /auth/bridge] failed to validate requested WACRM contact:',
+        contactError
+      );
+      return bridgeError('WACRM could not open this conversation.', 500);
+    }
+    if (!contact) {
+      return bridgeError('The requested WACRM contact was not found.', 404);
+    }
   }
 
   const { data: linkData, error: linkError } =
@@ -132,8 +163,15 @@ export async function POST(request: NextRequest) {
     return bridgeError('WACRM could not create a sign-in session.', 500);
   }
 
+  const destination = new URL(
+    requestedContactId ? '/inbox' : '/dashboard',
+    request.url
+  );
+  if (requestedContactId) {
+    destination.searchParams.set('contact', requestedContactId);
+  }
   const completionResponse = createBridgeCompleteResponse(
-    new URL('/dashboard', request.url),
+    destination,
     claims.issuer
   );
   const supabase = await createClient(completionResponse);

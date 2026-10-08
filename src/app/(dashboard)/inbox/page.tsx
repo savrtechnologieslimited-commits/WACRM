@@ -43,6 +43,7 @@ function InboxPageInner() {
    * automatically instead of showing the empty center panel.
    */
   const deepLinkConvId = searchParams.get("c");
+  const deepLinkContactId = searchParams.get("contact");
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] =
@@ -102,6 +103,7 @@ function InboxPageInner() {
   // back to the deep-linked conversation if they've already clicked
   // elsewhere.
   const autoSelectedForDeepLinkRef = useRef<string | null>(null);
+  const autoSelectedForContactRef = useRef<string | null>(null);
 
   // Tracks conversations whose hydrate fetch is currently in flight. The
   // conv-INSERT and the first-message-INSERT events both call into
@@ -424,6 +426,53 @@ function InboxPageInner() {
   const handleConversationsLoaded = useCallback(
     (loaded: Conversation[]) => {
       setConversations(loaded);
+      if (
+        deepLinkContactId &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          deepLinkContactId
+        ) &&
+        autoSelectedForContactRef.current !== deepLinkContactId
+      ) {
+        autoSelectedForContactRef.current = deepLinkContactId;
+        void (async () => {
+          const { data, error } = await createClient()
+            .from("conversations")
+            .select(CONVERSATION_SELECT)
+            .eq("contact_id", deepLinkContactId)
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+            .limit(1)
+            .maybeSingle();
+          if (error) {
+            console.error("Failed to open WACRM conversation for contact:", {
+              message: error.message,
+              details: error.details,
+              hint: error.hint,
+              code: error.code,
+            });
+            toast.error("Could not load this customer's WACRM conversation.");
+            return;
+          }
+          if (!data) {
+            toast.error("No WACRM conversation was found for this customer.");
+            return;
+          }
+
+          const conversation = normalizeConversation(data);
+          if (activeConversation?.id === conversation.id) return;
+
+          setConversations((prev) => [
+            conversation,
+            ...prev.filter((item) => item.id !== conversation.id),
+          ]);
+          setActiveConversation(conversation);
+          setActiveContact(conversation.contact ?? null);
+          setMessages([]);
+          autoSelectedForDeepLinkRef.current = conversation.id;
+          router.replace(`/inbox?c=${conversation.id}`, { scroll: false });
+        })();
+        return;
+      }
+
       // Resolve a pending deep-link here rather than in an effect — this
       // is an event handler, so the setState calls below are allowed by
       // react-hooks/set-state-in-effect. Runs once per ?c=<id> URL value
@@ -464,7 +513,7 @@ function InboxPageInner() {
         }
       }
     },
-    [deepLinkConvId, activeConversation?.id]
+    [deepLinkContactId, deepLinkConvId, activeConversation?.id, router]
   );
 
   const handleSelectConversation = useCallback(

@@ -25,8 +25,8 @@ jobs:
     # empty placeholder works as long as it stays consistent with
     # vitest.config.ts.
     env:
-      NEXT_PUBLIC_SUPABASE_URL: https://ci.example.supabase.co
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-dummy-anon-key
+      NEXT_PUBLIC_WHATSAPP_SUPABASE_URL: https://ci-whatsapp.example.supabase.co
+      NEXT_PUBLIC_WHATSAPP_SUPABASE_ANON_KEY: ci-dummy-anon-key
       ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000000'
       META_APP_SECRET: 'ci-dummy-meta-secret'
     steps:

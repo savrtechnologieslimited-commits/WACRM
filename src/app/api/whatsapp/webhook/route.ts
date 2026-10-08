@@ -35,8 +35,8 @@ let _adminClient: any = null
 function supabaseAdmin() {
   if (!_adminClient) {
     _adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      process.env.NEXT_PUBLIC_WHATSAPP_SUPABASE_URL!,
+      process.env.WHATSAPP_SUPABASE_SERVICE_ROLE_KEY!
     )
   }
   return _adminClient

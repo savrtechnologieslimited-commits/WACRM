@@ -48,8 +48,8 @@ vi.mock("@supabase/ssr", () => ({
 const { middleware } = await import("./middleware");
 
 beforeEach(() => {
-  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://test.supabase.co";
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = "anon-key";
+  process.env.NEXT_PUBLIC_WHATSAPP_SUPABASE_URL = "https://test.supabase.co";
+  process.env.NEXT_PUBLIC_WHATSAPP_SUPABASE_ANON_KEY = "anon-key";
   mockUser = null;
   refreshedCookies = [];
   configuredCookieOptions = undefined;
