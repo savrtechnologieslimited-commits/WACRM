@@ -38,6 +38,7 @@ import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -609,6 +610,9 @@ interface SendListCfg {
   dynamic_section_title?: string;
   dynamic_assigned_employee_id_field?: string;
   dynamic_next_node_key?: string;
+  include_none_option?: boolean;
+  none_option_title?: string;
+  none_next_node_key?: string;
   selected_id_var?: string;
   selected_title_var?: string;
   selected_item_var?: string;
@@ -820,6 +824,49 @@ function SendListForm({
               placeholder={t("nextNodePlaceholder")}
             />
           </div>
+          <div className="flex items-center justify-between gap-3">
+            <label htmlFor={`include-none-${currentKey}`} className="text-xs text-muted-foreground">
+              Include a “None” option
+            </label>
+            <Switch
+              id={`include-none-${currentKey}`}
+              checked={cfg.include_none_option ?? false}
+              onCheckedChange={(checked) =>
+                onUpdateConfig({ include_none_option: checked })
+              }
+            />
+          </div>
+          {cfg.include_none_option && (
+            <>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">
+                  None option label
+                </label>
+                <Input
+                  value={cfg.none_option_title ?? "None"}
+                  onChange={(event) =>
+                    onUpdateConfig({ none_option_title: event.target.value })
+                  }
+                  maxLength={24}
+                  className="bg-muted text-xs"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">
+                  When None is selected, advance to
+                </label>
+                <NodeKeySelect
+                  value={cfg.none_next_node_key || null}
+                  nodes={allNodes}
+                  excludeKey={currentKey}
+                  onChange={(value) =>
+                    onUpdateConfig({ none_next_node_key: value ?? "" })
+                  }
+                  placeholder={t("nextNodePlaceholder")}
+                />
+              </div>
+            </>
+          )}
         </div>
       ) : (
       <div className="mt-2">

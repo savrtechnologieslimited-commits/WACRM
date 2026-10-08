@@ -155,6 +155,33 @@ describe('dynamic send-list helpers', () => {
     ]);
   });
 
+  it('adds the configured None choice even when the source array is empty', () => {
+    const options = getDynamicListOptions(
+      { vars: { destinations: [] } } as unknown as FlowRunRow,
+      {
+        dynamic_source_var: 'destinations',
+        dynamic_title_field: 'destination_name',
+        dynamic_reply_id_field: 'destination_id',
+        include_none_option: true,
+        none_option_title: 'No preference',
+      } as SendListNodeConfig
+    );
+    expect(options).toEqual([
+      {
+        id: '__flow_dynamic_none__',
+        title: 'No preference',
+        item: {},
+        isNone: true,
+      },
+    ]);
+    expect(dynamicListPage(options, 0).rows).toEqual([
+      {
+        id: '__flow_dynamic_option__:__flow_dynamic_none__',
+        title: 'No preference',
+      },
+    ]);
+  });
+
   it('pages dynamic options into WhatsApp list limits and preserves nested values for interpolation', () => {
     const options = Array.from({ length: 19 }, (_, index) => ({
       id: `id-${index}`,
@@ -1262,6 +1289,87 @@ describe('visual Travel CRM actions in the flow engine', () => {
     );
   });
 
+  it('routes None directly to the enquiry question and clears destination state', async () => {
+    h.state.activeRuns = [
+      {
+        ...RUN,
+        current_node_key: 'choose',
+        vars: {
+          destinations: [],
+          selected_destination_id: 'old-destination-id',
+          selected_destination_name: 'Old destination',
+          selected_destination: { destination_id: 'old-destination-id' },
+          selected_assigned_employee_id: 'old-employee-id',
+          __travel_crm_destinations: [{ destination_id: 'old-destination-id' }],
+          __travel_crm_destination: { destination_id: 'old-destination-id' },
+        },
+      },
+    ];
+    h.state.nodes = [
+      {
+        id: 'n-choose',
+        flow_id: 'flow-1',
+        node_key: 'choose',
+        node_type: 'send_list',
+        config: {
+          text: 'Choose a destination',
+          button_label: 'Destinations',
+          dynamic_source_var: 'destinations',
+          dynamic_title_field: 'destination_name',
+          dynamic_reply_id_field: 'destination_id',
+          include_none_option: true,
+          none_next_node_key: 'ask-name',
+          dynamic_next_node_key: 'destination-pdf',
+        },
+      },
+      {
+        id: 'n-pdf',
+        flow_id: 'flow-1',
+        node_key: 'destination-pdf',
+        node_type: 'send_media',
+        config: { media_type: 'document', media_url: 'https://example.com/destination.pdf' },
+      },
+      {
+        id: 'n-name',
+        flow_id: 'flow-1',
+        node_key: 'ask-name',
+        node_type: 'send_message',
+        config: { text: 'What is your full name?', next_node_key: 'done' },
+      },
+      { id: 'n-done', flow_id: 'flow-1', node_key: 'done', node_type: 'end', config: {} },
+    ];
+    h.sendMedia.mockClear();
+    h.sendText.mockClear();
+
+    const result = await dispatch({
+      kind: 'interactive_reply',
+      reply_id: '__flow_dynamic_option__:__flow_dynamic_none__',
+      reply_title: 'None',
+      meta_message_id: 'm-dynamic-destination-none',
+    });
+
+    expect(result).toMatchObject({ consumed: true, outcome: 'completed' });
+    expect(h.sendMedia).not.toHaveBeenCalled();
+    expect(h.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'What is your full name?' })
+    );
+    expect(h.state.updates).toContainEqual(
+      expect.objectContaining({
+        table: 'flow_runs',
+        row: expect.objectContaining({
+          vars: expect.objectContaining({
+            selected_destination_id: null,
+            selected_destination_name: null,
+            selected_destination: null,
+            selected_assigned_employee_id: null,
+            __travel_crm_destination: null,
+            __travel_crm_destination_none: true,
+          }),
+        }),
+      })
+    );
+  });
+
   it('skips variable-backed media when the CRM returned no PDF URL', async () => {
     h.state.activeRuns = [
       {
@@ -1479,6 +1587,69 @@ describe('visual Travel CRM actions in the flow engine', () => {
     expect(h.sendText).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'Saved ENQ-0001' })
     );
+  });
+
+  it('saves a None-destination enquiry with blank destination fields and other answers intact', async () => {
+    setCompletionFlow();
+    const run = h.state.activeRuns[0] as unknown as FlowRunRow;
+    run.vars = {
+      ...run.vars,
+      selected_destination_id: null,
+      selected_destination_name: null,
+      selected_destination: null,
+      selected_assigned_employee_id: null,
+      __travel_crm_destination_none: true,
+    };
+    const completionNode = h.state.nodes.find(
+      (node) => (node as { node_key: string }).node_key === 'complete'
+    ) as { config: Record<string, unknown> } | undefined;
+    if (!completionNode) throw new Error('Completion node is missing.');
+    completionNode.config = {
+      ...completionNode.config,
+      variable_map: {
+        ...(completionNode.config as { variable_map: Record<string, string> }).variable_map,
+        destination_id: 'selected_destination_id',
+        destination_name: 'selected_destination_name',
+        assigned_employee_id: 'selected_assigned_employee_id',
+      },
+    };
+    vi.stubEnv(
+      'TRAVEL_CRM_FLOW_SYNC_URL',
+      'https://travel.example/api/wacrm/flow-completed'
+    );
+    vi.stubEnv('WACRM_BRIDGE_SECRET', 'a-32-byte-or-longer-shared-bridge-secret');
+    const request = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        Response.json({
+          customer_id: '22222222-2222-4222-8222-222222222222',
+          lead_id: '33333333-3333-4333-8333-333333333333',
+          enquiry_id: '44444444-4444-4444-8444-444444444444',
+          enquiry_number: 'ENQ-0002',
+        })
+    );
+    vi.stubGlobal('fetch', request);
+
+    await dispatch({
+      kind: 'interactive_reply',
+      reply_id: 'finish',
+      reply_title: 'Finish',
+      meta_message_id: 'm-completion-no-destination',
+    });
+
+    const init = request.mock.calls[0]?.[1];
+    if (!init) throw new Error('CRM completion request was not sent.');
+    const payload = JSON.parse(String(init.body));
+    expect(payload.destination).toBeNull();
+    expect(payload.answers).toMatchObject({
+      customer_name: 'Sam',
+      travel_date: '2026-12-25',
+      budget: '50000',
+      destination_id: null,
+      destination_name: null,
+      assigned_employee_id: null,
+    });
+    expect(payload.answers).not.toHaveProperty('selected_destination');
+    expect(payload.answers).not.toHaveProperty('selected_destination_name');
   });
 
   it('does not take the success path when CRM enquiry creation fails', async () => {

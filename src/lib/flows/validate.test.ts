@@ -78,6 +78,38 @@ describe("validateFlowForActivation — happy path", () => {
         ]),
       );
     });
+
+    it("requires a valid next node for the optional None destination choice", () => {
+      const nodes = [
+        { node_key: "start", node_type: "start", config: { next_node_key: "list" } },
+        {
+          node_key: "list",
+          node_type: "send_list",
+          config: {
+            text: "Choose",
+            button_label: "Destinations",
+            dynamic_source_var: "destinations",
+            dynamic_title_field: "destination_name",
+            dynamic_reply_id_field: "destination_id",
+            dynamic_assigned_employee_id_field: "assigned_employee_id",
+            selected_id_var: "selected_destination_id",
+            selected_title_var: "selected_destination_name",
+            selected_item_var: "selected_destination",
+            selected_assigned_employee_id_var: "selected_assigned_employee_id",
+            dynamic_next_node_key: "pdf",
+            include_none_option: true,
+            none_next_node_key: "missing-node",
+          },
+        },
+        { node_key: "pdf", node_type: "end", config: {} },
+      ];
+      expect(validateFlowForActivation(validFlow, nodes)).toContainEqual(
+        expect.objectContaining({
+          node_key: "list",
+          field: "none_next_node_key",
+        })
+      );
+    });
   });
 });
 

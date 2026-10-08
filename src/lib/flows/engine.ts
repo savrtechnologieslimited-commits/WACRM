@@ -613,11 +613,13 @@ export interface DynamicListOption {
   title: string;
   description?: string;
   item: Record<string, unknown>;
+  isNone?: boolean;
 }
 
 const DYNAMIC_PAGE_SIZE = 8;
 const DYNAMIC_PAGE_NEXT = '__flow_dynamic_page__:next';
 const DYNAMIC_PAGE_PREVIOUS = '__flow_dynamic_page__:previous';
+const DYNAMIC_NONE_OPTION_ID = '__flow_dynamic_none__';
 
 export function getDynamicListOptions(
   run: FlowRunRow,
@@ -671,6 +673,17 @@ export function getDynamicListOptions(
   });
   if (new Set(options.map((option) => option.id)).size !== options.length) {
     throw new Error('Dynamic list source contains duplicate reply IDs.');
+  }
+  if (cfg.include_none_option) {
+    if (options.some((option) => option.id === DYNAMIC_NONE_OPTION_ID)) {
+      throw new Error('Dynamic list source contains a reserved reply ID.');
+    }
+    options.push({
+      id: DYNAMIC_NONE_OPTION_ID,
+      title: (cfg.none_option_title || 'None').trim().slice(0, 24) || 'None',
+      item: {},
+      isNone: true,
+    });
   }
   if (options.length === 0) {
     throw new Error('Dynamic list source contains no options.');
@@ -776,6 +789,27 @@ async function handleDynamicListReply(
   const selectedItemVar = cfg.selected_item_var || 'selected_destination';
   const selectedEmployeeVar =
     cfg.selected_assigned_employee_id_var || 'selected_assigned_employee_id';
+  if (selected.isNone) {
+    if (!cfg.none_next_node_key) return { kind: 'unmatched' };
+    const vars = {
+      ...run.vars,
+      [selectedIdVar]: null,
+      [selectedTitleVar]: null,
+      [selectedItemVar]: null,
+      [selectedEmployeeVar]: null,
+      [pageKey]: 0,
+      __travel_crm_destination: null,
+      __travel_crm_destination_none: true,
+    };
+    if (!(await persistRunVars(db, run, vars, node.node_key))) {
+      return { kind: 'unmatched' };
+    }
+    await logEvent(db, run.id, 'node_entered', node.node_key, {
+      dynamic_selection: true,
+      destination_none: true,
+    });
+    return { kind: 'matched', nextNodeKey: cfg.none_next_node_key };
+  }
   const employeeField = cfg.dynamic_assigned_employee_id_field || 'assigned_employee_id';
   const assignedEmployeeId = resolveVariablePath(selected.item, employeeField);
   const trustedDestinations = run.vars.__travel_crm_destinations;
@@ -1356,8 +1390,31 @@ async function buildTravelCrmEnquiryPayload(
     rawPhone && rawPhone.length >= 7 && rawPhone.length <= 32
       ? rawPhone
       : null;
-  const verifiedDestination = getVerifiedDestination(run.vars);
+  const verifiedDestination =
+    run.vars.__travel_crm_destination_none === true
+      ? null
+      : getVerifiedDestination(run.vars);
   const answers = safeFlowAnswers(run.vars, variableMap);
+  if (run.vars.__travel_crm_destination_none === true) {
+    for (const key of [
+      'destination_id',
+      'destination_name',
+      'assigned_employee_id',
+      'selected_destination_id',
+      'selected_destination_name',
+      'selected_destination',
+      'selected_assigned_employee_id',
+    ]) {
+      delete answers[key];
+    }
+    answers.destination_id = null;
+    answers.destination_name = null;
+    answers.assigned_employee_id = null;
+    for (const key of ['destination_id', 'destination_name', 'assigned_employee_id']) {
+      const answerKey = variableMap[key];
+      if (answerKey) delete answers[answerKey];
+    }
+  }
   const travelDateKey = variableMap.travel_date;
   if (travelDateKey && run.vars[travelDateKey] !== undefined) {
     answers.travel_date = dateToIso(run.vars[travelDateKey]);

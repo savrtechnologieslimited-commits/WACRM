@@ -85,6 +85,9 @@ export interface SendListNodeConfig {
   dynamic_assigned_employee_id_field?: string;
   dynamic_page_var?: string;
   dynamic_next_node_key?: string;
+  include_none_option?: boolean;
+  none_option_title?: string;
+  none_next_node_key?: string;
   selected_id_var?: string;
   selected_title_var?: string;
   selected_item_var?: string;

@@ -422,6 +422,8 @@ function validateNode(
         selected_item_var?: string;
         selected_assigned_employee_id_var?: string;
         dynamic_next_node_key?: string;
+        include_none_option?: boolean;
+        none_next_node_key?: string;
       };
       if (!cfg.text?.trim()) {
         issues.push({
@@ -505,6 +507,25 @@ function validateNode(
             field: "dynamic_next_node_key",
             message: `Dynamic send-list points to non-existent node "${cfg.dynamic_next_node_key}".`,
           });
+        }
+        if (cfg.include_none_option) {
+          if (!cfg.none_next_node_key) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "none_next_node_key",
+              message: "Dynamic send-list with a None option needs a None-path node.",
+            });
+          } else if (!knownKeys.has(cfg.none_next_node_key)) {
+            issues.push({
+              severity: "error",
+              scope: "node",
+              node_key: node.node_key,
+              field: "none_next_node_key",
+              message: `Dynamic send-list points to non-existent None-path node "${cfg.none_next_node_key}".`,
+            });
+          }
         }
         break;
       }
@@ -994,9 +1015,16 @@ function outgoingEdges(node: NodeInput): string[] {
         sections?: Array<{ rows?: Array<{ next_node_key?: string }> }>;
         dynamic_source_var?: string;
         dynamic_next_node_key?: string;
+        include_none_option?: boolean;
+        none_next_node_key?: string;
       };
       if (cfg.dynamic_source_var?.trim()) {
-        return cfg.dynamic_next_node_key ? [cfg.dynamic_next_node_key] : [];
+        return [
+          ...(cfg.dynamic_next_node_key ? [cfg.dynamic_next_node_key] : []),
+          ...(cfg.include_none_option && cfg.none_next_node_key
+            ? [cfg.none_next_node_key]
+            : []),
+        ];
       }
       const out: string[] = [];
       for (const s of cfg.sections ?? []) {
