@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { Menu, Settings as SettingsIcon, User } from "lucide-react";
+import { LogOut, Menu, Settings as SettingsIcon, User } from "lucide-react";
+import { toast } from "sonner";
 import {
   Avatar,
   AvatarFallback,
@@ -48,8 +49,18 @@ import { useTranslations } from "next-intl";
 export function Header({ onOpenSidebar }: HeaderProps) {
   const t = useTranslations("Header");
   const pathname = usePathname();
-  const { profile } = useAuth();
+  const { profile, signOut } = useAuth();
   const titleKey = getPageTitleKey(pathname);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not sign out.",
+      );
+    }
+  };
 
   const initial =
     profile?.full_name?.charAt(0)?.toUpperCase() ??
@@ -131,6 +142,11 @@ export function Header({ onOpenSidebar }: HeaderProps) {
           >
             <SettingsIcon className="size-4" />
             {t("menuSettings")}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="bg-border" />
+          <DropdownMenuItem onClick={() => void handleSignOut()}>
+            <LogOut className="size-4" />
+            {t("menuSignOut")}
           </DropdownMenuItem>
         </DropdownMenuContent>
         </DropdownMenu>
