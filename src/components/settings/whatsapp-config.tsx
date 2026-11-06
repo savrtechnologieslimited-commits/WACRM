@@ -13,7 +13,6 @@ import {
   Zap,
   AlertTriangle,
   RotateCcw,
-  Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
@@ -31,8 +30,8 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion';
+import { WhatsAppCoexistenceSignup } from './whatsapp-coexistence-signup';
 import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
-import { DEMO_WHATSAPP_NUMBERS } from '@/lib/whatsapp/demo-data';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
@@ -82,15 +81,10 @@ export function WhatsAppConfig() {
   const [resetting, setResetting] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [config, setConfig] = useState<WhatsAppConfigType | null>(null);
-  const [configRows, setConfigRows] = useState<WhatsAppConfigType[]>([]);
-  const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null);
-  const [selectedDemoNumberId, setSelectedDemoNumberId] = useState<string>(
-    DEMO_WHATSAPP_NUMBERS[0].id,
-  );
-  const [isAddingNumber, setIsAddingNumber] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
+  const [configLoadError, setConfigLoadError] = useState('');
   // Structured details of the last failed Meta call (health check or
   // save) — rendered as small muted text under the actionable message.
   const [statusMeta, setStatusMeta] = useState<MetaErrorMeta | null>(null);
@@ -106,8 +100,10 @@ export function WhatsAppConfig() {
 
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
+  const [metaAppId, setMetaAppId] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [verifyToken, setVerifyToken] = useState('');
+  const [hasVerifyToken, setHasVerifyToken] = useState(false);
   const [pin, setPin] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
   const [verifyEdited, setVerifyEdited] = useState(false);
@@ -122,11 +118,14 @@ export function WhatsAppConfig() {
   const [mirrorMedia, setMirrorMedia] = useState(true);
   const [savingMirror, setSavingMirror] = useState(false);
 
-  // True once /register has succeeded on Meta's side (timestamp set
-  // in the row). When false, the saved config is metadata-only and
-  // Meta will silently drop every inbound event — that's the
-  // multi-number bug that prompted this work.
-  const isRegistered = Boolean(config?.registered_at);
+  // Coexistence numbers are already registered by Meta during Embedded
+  // Signup, so their live status comes from Meta's platform verification.
+  const isCoexistenceConnection =
+    config?.connection_method === 'embedded_signup_coexistence';
+  const isRegistered = isCoexistenceConnection
+    ? config?.coexistence_status === 'verified'
+    : Boolean(config?.registered_at);
+  const connectionIsLive = isRegistered;
   const lastRegistrationError = config?.last_registration_error ?? null;
 
   const [verifyingRegistration, setVerifyingRegistration] = useState(false);
@@ -146,16 +145,15 @@ export function WhatsAppConfig() {
       ? `${window.location.origin}/api/whatsapp/webhook`
       : '';
 
-  const fetchConfig = useCallback(async (
-    acctId: string,
-    configId?: string | null,
-    phoneNumberId?: string,
-  ) => {
-    setLoading(true);
+  const fetchConfig = useCallback(async (acctId: string, showLoading = true) => {
+    if (showLoading) setLoading(true);
+    setConfigLoadError('');
     try {
       const { data: rows, error } = await supabase
         .from('whatsapp_config')
-        .select('*')
+        .select(
+          'id,user_id,phone_number_id,display_phone_number,is_primary,waba_id,meta_app_id,status,connected_at,registered_at,subscribed_apps_at,last_registration_error,mirror_inbound_media,connection_method,coexistence_status,coexistence_sync_status,contacts_sync_request_id,history_sync_request_id,contacts_sync_status,history_sync_status,history_sync_progress,history_sync_error_code',
+        )
         .eq('account_id', acctId)
         .order('is_primary', { ascending: false });
 
@@ -165,24 +163,15 @@ export function WhatsAppConfig() {
       }
 
       const configs = (rows ?? []) as WhatsAppConfigType[];
-      setConfigRows(configs);
-      const data =
-        configs.find((row) => row.id === configId) ??
-        configs.find((row) => row.phone_number_id === phoneNumberId) ??
-        configs.find((row) => row.is_primary) ??
-        configs[0] ??
-        null;
-      setSelectedConfigId(data?.id ?? null);
-      setIsAddingNumber(false);
+      const data = configs.find((row) => row.is_primary) ?? configs[0] ?? null;
       if (data) {
         setConfig(data);
         setPhoneNumberId(data.phone_number_id || '');
         setWabaId(data.waba_id || '');
+        setMetaAppId(data.meta_app_id || '');
         setAccessToken(MASKED_TOKEN);
-        // Same treatment as the access token: the row carries the encrypted
-        // value, which is enough to know one exists. Show a mask instead of
-        // an empty box so nobody concludes the token was never saved.
-        setVerifyToken(data.verify_token ? MASKED_TOKEN : '');
+        setVerifyToken('');
+        setHasVerifyToken(false);
         setVerifyEdited(false);
         setPin('');
         setTokenEdited(false);
@@ -193,6 +182,7 @@ export function WhatsAppConfig() {
         setConfig(null);
         setPhoneNumberId('');
         setWabaId('');
+        setMetaAppId('');
         setAccessToken('');
         setVerifyToken('');
         setPin('');
@@ -211,6 +201,12 @@ export function WhatsAppConfig() {
             { method: 'GET' },
           );
           const payload = await res.json();
+          if (!res.ok) {
+            throw new Error(payload.error || `WhatsApp health check failed (${res.status}).`);
+          }
+          const savedVerifyToken = payload.has_verify_token === true;
+          setHasVerifyToken(savedVerifyToken);
+          if (savedVerifyToken) setVerifyToken(MASKED_TOKEN);
 
           if (payload.connected) {
             setConnectionStatus('connected');
@@ -219,7 +215,6 @@ export function WhatsAppConfig() {
             setStatusMeta(null);
             setWabaSubscription(payload.waba_subscription ?? null);
           } else {
-            setSelectedConfigId(null);
             setConnectionStatus('disconnected');
             setResetReason(payload.needs_reset ? 'token_corrupted' : payload.reason === 'meta_api_error' ? 'meta_api_error' : null);
             setStatusMessage(payload.message || '');
@@ -229,6 +224,11 @@ export function WhatsAppConfig() {
         } catch (err) {
           console.error('Health check failed:', err);
           setConnectionStatus('disconnected');
+          setStatusMessage(
+            err instanceof Error
+              ? err.message
+              : 'Could not reach the WhatsApp configuration health check.',
+          );
         }
       } else {
         setConnectionStatus('disconnected');
@@ -239,34 +239,16 @@ export function WhatsAppConfig() {
       }
     } catch (err) {
       console.error('fetchConfig error:', err);
+      setConfigLoadError(
+        err instanceof Error
+          ? err.message
+          : 'Could not load this workspace’s WhatsApp configuration.',
+      );
       toast.error(t('loadFailed'));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [supabase, t]);
-
-  function handleAddNumber() {
-    if (configRows.length >= 2) {
-      toast.error('Only two WhatsApp numbers are supported per account.');
-      return;
-    }
-    setConfig(null);
-    setSelectedConfigId(null);
-    setIsAddingNumber(true);
-    setPhoneNumberId('');
-    setWabaId('');
-    setAccessToken('');
-    setVerifyToken('');
-    setPin('');
-    setTokenEdited(false);
-    setVerifyEdited(false);
-    setMirrorMedia(true);
-    setConnectionStatus('unknown');
-    setResetReason(null);
-    setStatusMessage('');
-    setStatusMeta(null);
-    setRegistrationProbe(null);
-  }
 
   useEffect(() => {
     // Need both the auth session (`!authLoading`) AND the profile
@@ -309,6 +291,10 @@ export function WhatsAppConfig() {
   }
 
   async function handleSave() {
+    if (isCoexistenceConnection) {
+      toast.error(t('embeddedManualEditBlocked'));
+      return;
+    }
     if (!phoneNumberId.trim()) {
       toast.error(t('phoneNumberIdRequired'));
       return;
@@ -319,6 +305,10 @@ export function WhatsAppConfig() {
     }
     if (wabaId.trim() && !META_ID_RE.test(wabaId.trim())) {
       toast.error(t('wabaIdNotNumeric'));
+      return;
+    }
+    if (metaAppId.trim() && !META_ID_RE.test(metaAppId.trim())) {
+      toast.error('Meta App ID must contain only digits.');
       return;
     }
     if (!config && (!accessToken.trim() || !tokenEdited)) {
@@ -336,8 +326,9 @@ export function WhatsAppConfig() {
       const payload: Record<string, unknown> = {
         phone_number_id: phoneNumberId.trim(),
         waba_id: wabaId.trim() || null,
+        meta_app_id: metaAppId.trim() || null,
         ...(config?.id ? { config_id: config.id } : {}),
-        is_primary: config?.is_primary ?? configRows.length === 0,
+        is_primary: true,
         // Only sent when the user actually typed one. Left out otherwise
         // (undefined is dropped from the JSON body) so the server keeps the
         // stored token instead of nulling it — see resolveVerifyTokenForSave.
@@ -424,7 +415,7 @@ export function WhatsAppConfig() {
       }
 
       if (accountId) {
-        await fetchConfig(accountId, config?.id ?? null, phoneNumberId.trim());
+        await fetchConfig(accountId);
       }
     } catch (err) {
       console.error('Save error:', err);
@@ -506,6 +497,10 @@ export function WhatsAppConfig() {
 
   async function handleReset() {
     if (!config) return;
+    if (isCoexistenceConnection) {
+      toast.error(t('embeddedManualEditBlocked'));
+      return;
+    }
     if (!confirm(t('resetConfirm'))) {
       return;
     }
@@ -594,64 +589,42 @@ export function WhatsAppConfig() {
         title={t("title")}
         description={t("description")}
       />
-      <div className="mb-6 flex flex-wrap items-center gap-2">
-        {configRows.length === 0 &&
-          !isAddingNumber &&
-          DEMO_WHATSAPP_NUMBERS.map((number) => (
-            <Button
-              key={number.id}
-              type="button"
-              variant={selectedDemoNumberId === number.id ? 'default' : 'outline'}
-              onClick={() => setSelectedDemoNumberId(number.id)}
-            >
-              {number.label}
-              {number.isPrimary ? ' · Primary' : ''}
-              {' · Demo'}
-            </Button>
-          ))}
-        {configRows.map((row) => (
+      {configLoadError && (
+        <Alert className="mt-4 border-red-700/50 bg-red-950/30">
+          <XCircle className="size-4 text-red-400" />
+          <AlertTitle>{t('loadFailed')}</AlertTitle>
+          <AlertDescription>{configLoadError}</AlertDescription>
           <Button
-            key={row.id}
-            type="button"
-            variant={selectedConfigId === row.id ? 'default' : 'outline'}
-            onClick={() => accountId && fetchConfig(accountId, row.id)}
-          >
-            {row.display_phone_number || row.phone_number_id}
-            {row.is_primary ? ' · Primary' : ''}
-          </Button>
-        ))}
-        {configRows.length < 2 && (
-          <Button
-            type="button"
+            className="mt-3"
+            size="sm"
             variant="outline"
-            onClick={handleAddNumber}
-            disabled={!canEditSettings}
+            onClick={() => {
+              if (accountId) void fetchConfig(accountId);
+            }}
           >
-            Add WhatsApp number
+            <RotateCcw className="size-4" />
+            Retry
           </Button>
-        )}
-        {isAddingNumber && (
-          <span className="text-sm text-muted-foreground">
-            Adding another number
-          </span>
-        )}
-      </div>
-      {configRows.length === 0 && !isAddingNumber && (
-        <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
-          <Sparkles className="mt-0.5 size-5 shrink-0 text-emerald-300" />
-          <div>
-            <p className="text-sm font-semibold text-emerald-200">
-              WhatsApp multi-number demo
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-emerald-100/80">
-              Previewing {DEMO_WHATSAPP_NUMBERS.find((number) => number.id === selectedDemoNumberId)?.label}. Demo numbers are examples only and cannot send messages. To connect a real sender, choose Add WhatsApp number and enter its Meta credentials below.
-            </p>
-          </div>
+        </Alert>
+      )}
+      {config && (
+        <div className="mb-6 inline-flex rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
+          {config.display_phone_number || config.phone_number_id}
         </div>
       )}
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
+      <div className="grid gap-6">
       {/* Main config form */}
       <div className="space-y-6">
+        <WhatsAppCoexistenceSignup
+          hasExistingConnection={Boolean(config)}
+          canEditSettings={canEditSettings}
+          onConnected={async () => {
+            if (accountId) {
+              await fetchConfig(accountId, false);
+            }
+          }}
+        />
+
         {/* Corrupted-token reset banner */}
         {showResetBanner && (
           <Alert className="bg-amber-950/40 border-amber-600/40">
@@ -748,14 +721,14 @@ export function WhatsAppConfig() {
         {config && (
           <Alert
             className={
-              isRegistered
+              connectionIsLive
                 ? 'status-alert-success bg-emerald-950/30 border-emerald-700/50'
                 : 'status-alert-warning bg-amber-950/30 border-amber-700/50'
             }
           >
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
-                {isRegistered ? (
+                {connectionIsLive ? (
                   <CheckCircle2 className="status-icon-success size-4 text-emerald-400" />
                 ) : (
                   <AlertTriangle className="status-icon-warning size-4 text-amber-400" />
@@ -763,33 +736,43 @@ export function WhatsAppConfig() {
                 <AlertTitle
                   className={
                     'mb-0 ' +
-                    (isRegistered
+                    (connectionIsLive
                       ? 'status-text-success text-emerald-200'
                       : 'status-text-warning text-amber-200')
                   }
                 >
-                  {isRegistered
-                    ? t('registered')
-                    : t('notRegistered')}
+                  {isCoexistenceConnection
+                    ? isRegistered
+                      ? t('embeddedCoexistenceVerifiedTitle')
+                      : t('embeddedCoexistencePendingTitle')
+                    : isRegistered
+                      ? t('registered')
+                      : t('notRegistered')}
                 </AlertTitle>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleVerifyRegistration}
-                disabled={verifyingRegistration}
-                className="border-border bg-transparent text-foreground hover:bg-muted h-7"
-              >
-                {verifyingRegistration ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Zap className="size-3.5" />
-                )}
-                {t('verifyWithMeta')}
-              </Button>
+              {!isCoexistenceConnection && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleVerifyRegistration}
+                  disabled={verifyingRegistration}
+                  className="border-border bg-transparent text-foreground hover:bg-muted h-7"
+                >
+                  {verifyingRegistration ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Zap className="size-3.5" />
+                  )}
+                  {t('verifyWithMeta')}
+                </Button>
+              )}
             </div>
             <AlertDescription className="text-muted-foreground mt-2 text-xs leading-relaxed">
-              {isRegistered ? (
+              {isCoexistenceConnection ? (
+                isRegistered
+                  ? t('embeddedCoexistenceStatusDesc')
+                  : t('embeddedCoexistencePending')
+              ) : isRegistered ? (
                 <span
                   dangerouslySetInnerHTML={{
                     __html: t('subscribedSince', {
@@ -847,14 +830,43 @@ export function WhatsAppConfig() {
         )}
 
         {/* API Credentials */}
+        {isCoexistenceConnection && (
+          <Alert className="border-amber-700/50 bg-amber-950/30">
+            <AlertTriangle className="size-4 text-amber-400" />
+            <AlertTitle>{t('embeddedExistingConnection')}</AlertTitle>
+            <AlertDescription>{t('embeddedManualEditBlocked')}</AlertDescription>
+          </Alert>
+        )}
+        <details open className="group rounded-xl border border-border bg-card">
+          <summary className="cursor-pointer list-none px-5 py-4 text-base font-semibold text-foreground marker:hidden">
+            WhatsApp connection
+            <span className="float-right text-sm font-normal text-muted-foreground group-open:hidden">Show</span>
+            <span className="float-right hidden text-sm font-normal text-muted-foreground group-open:inline">Hide</span>
+          </summary>
         <Card>
           <CardHeader>
             <CardTitle className="text-foreground">{t('apiCredentialsTitle')}</CardTitle>
             <CardDescription className="text-muted-foreground">
               {t('apiCredentialsDesc')}
             </CardDescription>
+            <p className="text-xs text-muted-foreground">
+              Meta-provided test numbers and credentials can use this same form. Leave the PIN blank for Meta-pre-registered test numbers.
+            </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-muted-foreground">Meta App ID (optional)</Label>
+              <Input
+                inputMode="numeric"
+                placeholder="Enter Meta App ID"
+                value={metaAppId}
+                onChange={(e) => setMetaAppId(e.target.value)}
+                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+              />
+              <p className="text-xs text-muted-foreground">
+                Used only to identify this app’s WABA webhook subscription in status checks.
+              </p>
+            </div>
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('phoneNumberId')}</Label>
               <Input
@@ -927,7 +939,7 @@ export function WhatsAppConfig() {
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
               <p className="text-xs text-muted-foreground">
-                {config?.verify_token && !verifyEdited
+                {hasVerifyToken && !verifyEdited
                   ? t('webhookVerifyTokenSaved')
                   : t('webhookVerifyTokenHint')}
               </p>
@@ -955,6 +967,7 @@ export function WhatsAppConfig() {
             </div>
           </CardContent>
         </Card>
+        </details>
 
         {/* Webhook URL */}
         <Card>
@@ -1027,7 +1040,7 @@ export function WhatsAppConfig() {
         <div className="flex flex-wrap gap-3">
           <Button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || isCoexistenceConnection}
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             {saving ? (
@@ -1061,7 +1074,7 @@ export function WhatsAppConfig() {
             <Button
               variant="outline"
               onClick={handleReset}
-              disabled={resetting}
+              disabled={resetting || isCoexistenceConnection}
               className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
             >
               {resetting ? (

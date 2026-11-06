@@ -323,6 +323,17 @@ export interface WhatsAppConfig {
    * inbound attachments expire. Migration 039.
    */
   mirror_inbound_media?: boolean;
+  connection_method?: 'manual' | 'embedded_signup_coexistence';
+  coexistence_status?: 'not_applicable' | 'pending_verification' | 'verified' | 'setup_error';
+  coexistence_sync_status?: 'not_started' | 'requested' | 'partial' | 'failed';
+  contacts_sync_request_id?: string | null;
+  history_sync_request_id?: string | null;
+  contacts_sync_status?: 'not_started' | 'requested' | 'failed';
+  history_sync_status?: 'not_started' | 'requested' | 'in_progress' | 'completed' | 'declined' | 'failed';
+  history_sync_progress?: number;
+  history_sync_error_code?: number | null;
+  meta_business_id?: string | null;
+  meta_app_id?: string | null;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

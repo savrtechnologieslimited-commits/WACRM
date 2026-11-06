@@ -21,6 +21,8 @@ const h = vi.hoisted(() => ({
     automationCompleted: 0,
     /** whatsapp_config.mirror_inbound_media for the matched row (#466). */
     mirrorInboundMedia: true as boolean | undefined,
+    connectionMethod: null as string | null,
+    configUpdates: [] as Record<string, unknown>[],
     /** Objects the inbound-media mirror pushed into chat-media. */
     storageUploads: [] as {
       bucket: string
@@ -59,27 +61,49 @@ vi.mock('@supabase/supabase-js', () => ({
       switch (table) {
         case 'whatsapp_config':
           return {
-            select: () => ({
-              eq: () =>
-                Promise.resolve({
-                  data: [
-                    {
-                      account_id: 'acc-1',
-                      user_id: 'user-1',
-                      phone_number_id: 'pn-1',
-                      access_token: 'enc',
-                      mirror_inbound_media: h.state.mirrorInboundMedia,
-                    },
-                  ],
+            select: () => {
+                const config = {
+                  id: 'config-1',
+                  account_id: 'acc-1',
+                  user_id: 'user-1',
+                  phone_number_id: 'pn-1',
+                  waba_id: 'waba-1',
+                  access_token: 'enc',
+                  mirror_inbound_media: h.state.mirrorInboundMedia,
+                  connection_method: h.state.connectionMethod,
+                }
+                const result = Promise.resolve({
+                  data: [config],
                   error: null,
-                }),
-            }),
+                })
+                return Object.assign(result, {
+                  eq: () => result,
+                  maybeSingle: async () => ({ data: config, error: null }),
+                  lt: async () => ({ error: null }),
+                })
+            },
+            update: (patch: Record<string, unknown>) => {
+                h.state.configUpdates.push(patch)
+                return {
+                  eq: () => {
+                    const result = Promise.resolve({ error: null })
+                    return Object.assign(result, {
+                      lt: async () => ({ error: null }),
+                    })
+                  },
+                }
+            },
           }
         case 'conversations':
           // findOrCreateConversation: select().eq().eq().order().limit()
           {
             const chain: Record<string, unknown> = {
               eq: () => chain,
+              maybeSingle: () =>
+                Promise.resolve({
+                  data: { last_message_at: null },
+                  error: null,
+                }),
               order: () => ({
                 limit: () =>
                   Promise.resolve({
@@ -88,7 +112,12 @@ vi.mock('@supabase/supabase-js', () => ({
                   }),
               }),
             }
-            return { select: () => chain }
+            return {
+              select: () => chain,
+              update: () => ({
+                eq: () => Promise.resolve({ error: null }),
+              }),
+            }
           }
         case 'broadcast_recipients':
           // Two chains land here:
@@ -370,6 +399,27 @@ async function runStatusWebhook(status: Record<string, unknown>) {
   return res
 }
 
+async function runCoexistenceWebhook(
+  field: string,
+  value: Record<string, unknown>,
+  wabaId = 'waba-1'
+) {
+  const body = {
+    entry: [
+      {
+        id: wabaId,
+        changes: [{ field, value }],
+      },
+    ],
+  }
+  const response = await POST({
+    text: async () => JSON.stringify(body),
+    headers: { get: () => 'sha256=stub' },
+  } as unknown as Request)
+  for (const callback of h.state.afterCallbacks) await callback()
+  return response
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   h.state.messageUpsertResult = [{ id: 'msg-1' }]
@@ -382,6 +432,8 @@ beforeEach(() => {
   h.state.automationStarted = 0
   h.state.automationCompleted = 0
   h.state.mirrorInboundMedia = true
+  h.state.connectionMethod = null
+  h.state.configUpdates = []
   h.state.storageUploads = []
   h.state.storageUploadError = null
   h.state.contactByWaUserId = null
@@ -919,6 +971,178 @@ describe('template-lifecycle webhooks: WABA id is threaded to the handler (#534)
       wabaId: 'WABA-1',
     })
     // A template event must not fall through to the messaging branch.
+    expect(h.state.upsertCalls).toHaveLength(0)
+  })
+})
+
+describe('WhatsApp Business App Coexistence webhooks', () => {
+  beforeEach(() => {
+    h.state.connectionMethod = 'embedded_signup_coexistence'
+  })
+
+  it('stores mobile-app message echoes as idempotent agent messages', async () => {
+    const response = await runCoexistenceWebhook('smb_message_echoes', {
+      metadata: {
+        phone_number_id: 'pn-1',
+        display_phone_number: '15550001111',
+      },
+      message_echoes: [
+        {
+          id: 'wamid.echo-1',
+          from: '15550001111',
+          to: '15551230000',
+          timestamp: '1700000000',
+          type: 'text',
+          text: { body: 'Sent from the Business App' },
+        },
+      ],
+    })
+
+    expect(response).toMatchObject({ body: { status: 'received' } })
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      sender_type: 'agent',
+      message_id: 'wamid.echo-1',
+      content_text: 'Sent from the Business App',
+    })
+    expect(h.state.rpcCalls).toHaveLength(0)
+    expect(h.runAutomationsForTrigger).not.toHaveBeenCalled()
+  })
+
+  it('rejects Coexistence events whose WABA does not match the phone connection', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await runCoexistenceWebhook(
+        'smb_message_echoes',
+        {
+          metadata: { phone_number_id: 'pn-1' },
+          message_echoes: [
+            {
+              id: 'wamid.unmatched',
+              from: '15550001111',
+              to: '15551230000',
+              timestamp: '1700000000',
+              type: 'text',
+              text: { body: 'Should not enter another WABA inbox' },
+            },
+          ],
+        },
+        'other-waba'
+      )
+    } finally {
+      error.mockRestore()
+    }
+    expect(h.state.upsertCalls).toHaveLength(0)
+  })
+
+  it('imports history with its original sender direction without triggering inbound side effects', async () => {
+    await runCoexistenceWebhook('history', {
+      metadata: {
+        phone_number_id: 'pn-1',
+        display_phone_number: '15550001111',
+      },
+      history: [
+        {
+          metadata: { phase: 0, chunk_order: 1, progress: 100 },
+          threads: [
+            {
+              id: '15551230000',
+              messages: [
+                {
+                  id: 'wamid.history-in',
+                  from: '15551230000',
+                  timestamp: '1700000000',
+                  type: 'text',
+                  text: { body: 'Customer message' },
+                  history_context: { status: 'READ' },
+                },
+                {
+                  id: 'wamid.history-out',
+                  from: '15550001111',
+                  to: '15551230000',
+                  timestamp: '1700000001',
+                  type: 'text',
+                  text: { body: 'Business reply' },
+                  history_context: { status: 'SENT' },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(h.state.upsertCalls.map(({ row }) => row)).toMatchObject([
+      { sender_type: 'customer', message_id: 'wamid.history-in', status: 'read' },
+      { sender_type: 'agent', message_id: 'wamid.history-out', status: 'sent' },
+    ])
+    expect(h.state.rpcCalls).toHaveLength(0)
+    expect(h.runAutomationsForTrigger).not.toHaveBeenCalled()
+  })
+
+  it('routes synced contacts through the existing account- and phone-scoped contact matcher', async () => {
+    await runCoexistenceWebhook('smb_app_state_sync', {
+      metadata: { phone_number_id: 'pn-1' },
+      state_sync: [
+        {
+          type: 'contact',
+          action: 'add',
+          contact: {
+            full_name: 'Ada Lovelace',
+            phone_number: '+1 555 123 0000',
+          },
+        },
+      ],
+    })
+
+    expect(mockFindExistingContact).toHaveBeenCalledWith(
+      expect.anything(),
+      'acc-1',
+      '15551230000',
+      'pn-1'
+    )
+    expect(h.state.upsertCalls).toHaveLength(0)
+  })
+
+  it('applies contact edits received from the WhatsApp Business app', async () => {
+    await runCoexistenceWebhook('smb_app_state_sync', {
+      metadata: { phone_number_id: 'pn-1' },
+      state_sync: [
+        {
+          type: 'contact',
+          action: 'edit',
+          contact: {
+            full_name: 'Ada Byron',
+            phone_number: '+1 555 123 0000',
+          },
+        },
+      ],
+    })
+
+    expect(h.state.contactUpdates).toContainEqual(
+      expect.objectContaining({ name: 'Ada Byron' })
+    )
+  })
+
+  it('marks a Coexistence connection offboarded without deleting tenant data', async () => {
+    await runCoexistenceWebhook('account_update', {
+      event: 'ACCOUNT_OFFBOARDED',
+    })
+
+    expect(h.state.configUpdates).toEqual([
+      { status: 'disconnected', coexistence_status: 'setup_error' },
+    ])
+    expect(h.state.upsertCalls).toHaveLength(0)
+  })
+
+  it('marks partner removal as disconnected without deleting tenant data', async () => {
+    await runCoexistenceWebhook('account_update', {
+      event: 'PARTNER_REMOVED',
+    })
+
+    expect(h.state.configUpdates).toEqual([
+      { status: 'disconnected', coexistence_status: 'setup_error' },
+    ])
     expect(h.state.upsertCalls).toHaveLength(0)
   })
 })

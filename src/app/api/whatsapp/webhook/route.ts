@@ -14,6 +14,7 @@ import {
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
+import { timingSafeEqual } from 'node:crypto'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
@@ -56,6 +57,7 @@ interface WhatsAppMessage {
   from_user_id?: string
   /** Sender's portfolio-level BSUID. */
   from_parent_user_id?: string
+  to?: string
   timestamp: string
   type: string
   text?: { body: string }
@@ -88,6 +90,18 @@ interface WhatsAppMessage {
   button?: { text?: string; payload?: string }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  history_context?: { status?: string }
+  revoke?: { original_message_id?: string }
+  edit?: {
+    original_message_id?: string
+    message?: {
+      type?: string
+      text?: { body?: string }
+      image?: { caption?: string }
+      video?: { caption?: string }
+      document?: { caption?: string }
+    }
+  }
 }
 
 /** One entry of a failed status's `errors` array, as Meta sends it. */
@@ -104,18 +118,34 @@ interface WhatsAppWebhookEntry {
   changes: Array<{
     value: {
       messaging_product: string
-      metadata: {
+      metadata?: {
         display_phone_number: string
         phone_number_id: string
       }
+      event?: string
       contacts?: Array<{
-        profile: { name?: string; username?: string }
+        profile?: { name?: string; username?: string }
         /** Absent for a username-only sender — see WhatsAppMessage.from. */
         wa_id?: string
         user_id?: string
         parent_user_id?: string
       }>
       messages?: WhatsAppMessage[]
+      message_echoes?: WhatsAppMessage[]
+      state_sync?: Array<{
+        type?: string
+        action?: string
+        contact?: {
+          full_name?: string
+          first_name?: string
+          phone_number?: string
+        }
+      }>
+      history?: Array<{
+        metadata?: { phase?: number; chunk_order?: number; progress?: number }
+        threads?: Array<{ id?: string; messages?: WhatsAppMessage[] }>
+        errors?: MetaStatusError[]
+      }>
       statuses?: Array<{
         id: string
         status: string
@@ -147,6 +177,21 @@ export async function GET(request: Request) {
         { error: 'Missing verification parameters' },
         { status: 400 }
       )
+    }
+
+    const configuredVerifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN?.trim()
+    if (configuredVerifyToken) {
+      const provided = Buffer.from(verifyToken)
+      const expected = Buffer.from(configuredVerifyToken)
+      if (
+        provided.length === expected.length &&
+        timingSafeEqual(provided, expected)
+      ) {
+        return new Response(challenge, {
+          status: 200,
+          headers: { 'Content-Type': 'text/plain' },
+        })
+      }
     }
 
     // Fetch all whatsapp configs to check verify tokens
@@ -289,18 +334,34 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       const value = change.value
+      if (change.field === 'account_update') {
+        await processCoexistenceAccountUpdate(entry.id, value.event)
+        continue
+      }
+      const phoneNumberId = value.metadata?.phone_number_id
+      if (!phoneNumberId) {
+        console.warn(`[webhook] ${change.field} event has no phone number ID`)
+        continue
+      }
 
       // Handle status updates
       if (value.statuses) {
         for (const status of value.statuses) {
-          await handleStatusUpdate(status, value.metadata.phone_number_id)
+          await handleStatusUpdate(status, phoneNumberId)
         }
+      }
+
+      if (
+        change.field === 'smb_app_state_sync' ||
+        change.field === 'smb_message_echoes' ||
+        change.field === 'history'
+      ) {
+        await processCoexistenceWebhook(change.field, value, phoneNumberId, entry.id)
+        continue
       }
 
       // Handle incoming messages
       if (!value.messages || !value.contacts) continue
-
-      const phoneNumberId = value.metadata.phone_number_id
 
       // Find user's config by phone_number_id. `.single()` returns
       // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
@@ -383,6 +444,9 @@ const RECIPIENT_STATUS_LADDER = [
   'read',
   'replied',
 ] as const
+
+const HISTORY_MEDIA_PLACEHOLDER =
+  'WhatsApp media message from synchronized history'
 
 function ladderLevel(s: string): number {
   const idx = (RECIPIENT_STATUS_LADDER as readonly string[]).indexOf(s)
@@ -587,6 +651,279 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
   }
 }
 
+async function processCoexistenceWebhook(
+  field: 'smb_app_state_sync' | 'smb_message_echoes' | 'history',
+  value: WhatsAppWebhookEntry['changes'][number]['value'],
+  phoneNumberId: string,
+  wabaId: string
+) {
+  const { data: config, error } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('*')
+    .eq('phone_number_id', phoneNumberId)
+    .maybeSingle()
+  if (error || !config) {
+    console.error(`[webhook] ${field} could not resolve its WhatsApp connection:`, error)
+    return
+  }
+  if (config.waba_id !== wabaId) {
+    console.error(
+      `[webhook] ${field} WABA ${wabaId} does not match the connection for phone ${phoneNumberId}`
+    )
+    return
+  }
+  if (config.connection_method !== 'embedded_signup_coexistence') {
+    console.warn(`[webhook] ignoring ${field} for a non-Coexistence connection`)
+    return
+  }
+
+  const accessToken = decrypt(config.access_token)
+  if (field === 'smb_app_state_sync') {
+    for (const state of value.state_sync ?? []) {
+      if (
+        state.type !== 'contact' ||
+        !state.contact?.phone_number ||
+        (state.action !== 'add' &&
+          state.action !== 'edit' &&
+          state.action !== 'remove')
+      ) {
+        console.warn('[webhook] unsupported or incomplete SMB contact sync event')
+        continue
+      }
+      if (state.action === 'remove') {
+        // A phone-book removal is not a request to erase the richer CRM record.
+        console.info('[webhook] WhatsApp Business app contact removed; CRM record retained')
+        continue
+      }
+      if (state.action !== 'add' && state.action !== 'edit') {
+        console.warn('[webhook] unsupported SMB contact sync action:', state.action)
+        continue
+      }
+      const phone = normalizePhone(state.contact.phone_number)
+      if (!phone) {
+        console.warn('[webhook] SMB contact sync supplied an invalid phone number')
+        continue
+      }
+      await findOrCreateContact(
+        config.account_id,
+        config.user_id,
+        phoneNumberId,
+        {
+          phone,
+          waUserId: null,
+          waParentUserId: null,
+          waUsername: null,
+          name: state.contact.full_name || state.contact.first_name || '',
+        }
+      )
+    }
+    return
+  }
+
+  if (field === 'smb_message_echoes') {
+    for (const echo of value.message_echoes ?? []) {
+      if (echo.type === 'revoke' || echo.type === 'edit') {
+        await applyBusinessAppMessageMutation(echo, phoneNumberId)
+        continue
+      }
+      if (!echo.to) {
+        console.warn('[webhook] SMB message echo has no recipient; skipping')
+        continue
+      }
+      await processMessage(
+        { ...echo, from: echo.to },
+        { wa_id: echo.to },
+        config.account_id,
+        config.user_id,
+        phoneNumberId,
+        accessToken,
+        config.mirror_inbound_media !== false,
+        { senderType: 'agent' }
+      )
+    }
+    return
+  }
+
+  let importedCount = 0
+  let maxProgress = 0
+  const declinedError = (value.history ?? [])
+    .flatMap((batch) => batch.errors ?? [])
+    .find((item) => item.code === 2593109)
+  if (declinedError) {
+    const { error: declineUpdateError } = await supabaseAdmin()
+      .from('whatsapp_config')
+      .update({
+        history_sync_status: 'declined',
+        history_sync_error_code: declinedError.code,
+      })
+      .eq('id', config.id)
+    if (declineUpdateError) {
+      console.error('[webhook] could not store history-sharing decision:', declineUpdateError)
+    }
+    console.info('[webhook] WhatsApp Business app history sharing was declined')
+  }
+  for (const batch of value.history ?? []) {
+    const progress = batch.metadata?.progress
+    if (typeof progress === 'number' && progress >= 0 && progress <= 100) {
+      maxProgress = Math.max(maxProgress, progress)
+    }
+    for (const thread of batch.threads ?? []) {
+      if (!thread.id) {
+        console.warn('[webhook] history thread has no customer identifier; skipping')
+        continue
+      }
+      for (const historicalMessage of thread.messages ?? []) {
+        const isBusinessSent =
+          normalizePhone(historicalMessage.from ?? '') ===
+          normalizePhone(value.metadata?.display_phone_number ?? '')
+        const message = {
+          ...historicalMessage,
+          from: isBusinessSent
+            ? thread.id
+            : historicalMessage.from || thread.id,
+        }
+        const historyStatus = toStoredHistoryStatus(
+          historicalMessage.history_context?.status
+        )
+        if (historicalMessage.type === 'media_placeholder') {
+          message.type = 'text'
+          message.text = { body: HISTORY_MEDIA_PLACEHOLDER }
+        }
+        await processMessage(
+          message,
+          { wa_id: thread.id },
+          config.account_id,
+          config.user_id,
+          phoneNumberId,
+          accessToken,
+          config.mirror_inbound_media !== false,
+          {
+            senderType: isBusinessSent ? 'agent' : 'customer',
+            historical: true,
+            status: historyStatus,
+          }
+        )
+        importedCount++
+      }
+    }
+  }
+  console.info(`[webhook] processed ${importedCount} synchronized history messages`)
+  if (!declinedError && maxProgress > 0) {
+    const { error: progressError } = await supabaseAdmin()
+      .from('whatsapp_config')
+      .update({
+        history_sync_progress: maxProgress,
+        history_sync_status: maxProgress === 100 ? 'completed' : 'in_progress',
+      })
+      .eq('id', config.id)
+      .lt('history_sync_progress', maxProgress)
+    if (progressError) {
+      console.error('[webhook] could not store history sync progress:', progressError)
+    }
+  }
+}
+
+async function processCoexistenceAccountUpdate(wabaId: string, event?: string) {
+  let patch: Record<string, string> | null = null
+  if (event === 'ACCOUNT_OFFBOARDED' || event === 'PARTNER_REMOVED') {
+    patch = { status: 'disconnected', coexistence_status: 'setup_error' }
+  } else if (event === 'ACCOUNT_RECONNECTED') {
+    patch = { status: 'connected', coexistence_status: 'pending_verification' }
+  } else {
+    console.warn('[webhook] unsupported account_update event:', event)
+    return
+  }
+
+  const { data: configs, error: lookupError } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('id')
+    .eq('waba_id', wabaId)
+    .eq('connection_method', 'embedded_signup_coexistence')
+  if (lookupError) {
+    console.error('[webhook] account_update connection lookup failed:', lookupError)
+    return
+  }
+  for (const config of configs ?? []) {
+    const { error: updateError } = await supabaseAdmin()
+      .from('whatsapp_config')
+      .update(patch)
+      .eq('id', config.id)
+    if (updateError) {
+      console.error('[webhook] account_update connection update failed:', updateError)
+    }
+  }
+}
+
+function toStoredHistoryStatus(status?: string): string {
+  switch (status) {
+    case 'SENT':
+    case 'PENDING':
+      return 'sent'
+    case 'DELIVERED':
+      return 'delivered'
+    case 'READ':
+    case 'PLAYED':
+      return 'read'
+    case 'ERROR':
+      return 'failed'
+    default:
+      return 'sent'
+  }
+}
+
+async function applyBusinessAppMessageMutation(
+  message: WhatsAppMessage,
+  phoneNumberId: string
+) {
+  const originalId =
+    message.type === 'revoke'
+      ? message.revoke?.original_message_id
+      : message.edit?.original_message_id
+  if (!originalId) {
+    console.warn(`[webhook] ${message.type} event has no original message ID`)
+    return
+  }
+
+  const { data: matching, error: lookupError } = await supabaseAdmin()
+    .from('messages')
+    .select('id, conversation:conversations!inner(channel_phone_number_id)')
+    .eq('message_id', originalId)
+    .eq('conversation.channel_phone_number_id', phoneNumberId)
+  if (lookupError) {
+    console.error('[webhook] could not resolve Coexistence message mutation:', lookupError)
+    return
+  }
+  const ids = (matching ?? []).map((row: { id: string }) => row.id)
+  if (ids.length === 0) {
+    console.warn('[webhook] Coexistence mutation target is not in this inbox')
+    return
+  }
+
+  const patch =
+    message.type === 'revoke'
+      ? {
+          content_type: 'text',
+          content_text: 'Message deleted in WhatsApp Business app',
+          media_url: null,
+          media_type: null,
+        }
+      : {
+          content_text:
+            message.edit?.message?.text?.body ??
+            message.edit?.message?.image?.caption ??
+            message.edit?.message?.video?.caption ??
+            message.edit?.message?.document?.caption ??
+            null,
+        }
+  const { error: updateError } = await supabaseAdmin()
+    .from('messages')
+    .update(patch)
+    .in('id', ids)
+  if (updateError) {
+    console.error('[webhook] Coexistence message mutation failed:', updateError)
+  }
+}
+
 /**
  * Resolve a Meta-side message_id into the matching internal UUID, scoped
  * to one conversation. Returns null when we never received the parent
@@ -683,8 +1020,14 @@ async function processMessage(
   accessToken: string,
   // Per-account opt-out for the inbound-media mirror (migration 039).
   // See parseMessageContent for what it turns off.
-  mirrorMedia: boolean
+  mirrorMedia: boolean,
+  options: {
+    senderType?: 'customer' | 'agent'
+    historical?: boolean
+    status?: string
+  } = {}
 ) {
+  const senderType = options.senderType ?? 'customer'
   // Phone number OR business-scoped user ID — Meta sends only the
   // latter for a sender who has adopted a WhatsApp username (#519).
   const identity = resolveInboundIdentity(message, contact)
@@ -791,23 +1134,34 @@ async function processMessage(
   // on every inbound while still covering the case where
   // the contact row already exists (manual add / CSV import) but they've
   // never messaged us before — which new_contact_created wouldn't catch.
-  const {
-    data: priorCustomerMessage,
-    error: priorCustomerMessageError,
-  } = await supabaseAdmin()
-    .from('messages')
-    .select('id')
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer')
-    .limit(1)
-    .maybeSingle()
-  if (priorCustomerMessageError) {
-    console.error(
-      'Error checking prior customer messages:',
-      priorCustomerMessageError,
-    )
+  let isFirstInboundMessage = false
+  if (senderType === 'customer' && !options.historical) {
+    const {
+      count: priorCustomerMessageCount,
+      error: priorCustomerMessageError,
+    } = await supabaseAdmin()
+      .from('messages')
+      .select('id', { count: 'exact', head: true })
+      .eq('conversation_id', conversation.id)
+      .eq('sender_type', 'customer')
+    if (priorCustomerMessageError) {
+      console.error(
+        'Error checking prior customer messages:',
+        priorCustomerMessageError,
+      )
+    }
+    isFirstInboundMessage = priorCustomerMessageCount === 0
   }
-  const isFirstInboundMessage = !priorCustomerMessage
+
+  const messageCreatedAt = new Date(parseInt(message.timestamp) * 1000).toISOString()
+  const requestedStatus = options.status
+  const messageStatus =
+    requestedStatus &&
+    ['sending', 'sent', 'delivered', 'read', 'failed'].includes(requestedStatus)
+      ? requestedStatus
+      : senderType === 'agent'
+        ? 'sent'
+        : 'delivered'
 
   // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
   // transient 5xx), and each retry replays the exact same message.id. The
@@ -822,7 +1176,7 @@ async function processMessage(
     .upsert(
       {
         conversation_id: conversation.id,
-        sender_type: 'customer',
+        sender_type: senderType,
         content_type: contentType,
         content_text: contentText,
         media_url: mediaUrl,
@@ -832,8 +1186,8 @@ async function processMessage(
         // bytes had already been fetched successfully.
         media_type: mediaType,
         message_id: message.id,
-        status: 'delivered',
-        created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+        status: messageStatus,
+        created_at: messageCreatedAt,
         reply_to_message_id: replyToInternalId,
         // Only populated for content_type='interactive'. Migration 010 added
         // the column; null for every other content_type so existing inserts
@@ -854,9 +1208,42 @@ async function processMessage(
   // re-advancing flows, re-firing automations, re-invoking AI handling, and
   // re-dispatching public webhooks (issue #367).
   if (!insertedRows || insertedRows.length === 0) {
+    if (options.historical && message.type !== 'text') {
+      const { data: enrichedRows, error: enrichError } = await supabaseAdmin()
+        .from('messages')
+        .update({
+          content_type: contentType,
+          content_text: contentText,
+          media_url: mediaUrl,
+          media_type: mediaType,
+          status: messageStatus,
+        })
+        .eq('conversation_id', conversation.id)
+        .eq('message_id', message.id)
+        .eq('content_text', HISTORY_MEDIA_PLACEHOLDER)
+        .select('id')
+      if (enrichError) {
+        console.error('[webhook] failed to enrich synchronized media history:', enrichError)
+      } else if (enrichedRows?.length) {
+        await refreshConversationSummary(
+          conversation.id,
+          contentText || `[${message.type}]`,
+          messageCreatedAt
+        )
+      }
+    }
     console.info(
       '[webhook] duplicate inbound message ignored (idempotent replay):',
       message.id
+    )
+    return
+  }
+
+  if (options.historical || senderType === 'agent') {
+    await refreshConversationSummary(
+      conversation.id,
+      contentText || `[${message.type}]`,
+      messageCreatedAt
     )
     return
   }
@@ -1009,6 +1396,39 @@ async function processMessage(
     content_type: contentType,
     text: contentText,
   })
+}
+
+async function refreshConversationSummary(
+  conversationId: string,
+  lastMessageText: string,
+  messageCreatedAt: string
+) {
+  const { data: conversation, error: lookupError } = await supabaseAdmin()
+    .from('conversations')
+    .select('last_message_at')
+    .eq('id', conversationId)
+    .maybeSingle()
+  if (lookupError) {
+    console.error('[webhook] could not read conversation summary:', lookupError)
+    return
+  }
+  if (
+    conversation?.last_message_at &&
+    new Date(conversation.last_message_at).getTime() > new Date(messageCreatedAt).getTime()
+  ) {
+    return
+  }
+  const { error: updateError } = await supabaseAdmin()
+    .from('conversations')
+    .update({
+      last_message_text: lastMessageText,
+      last_message_at: messageCreatedAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId)
+  if (updateError) {
+    console.error('[webhook] could not refresh conversation summary:', updateError)
+  }
 }
 
 async function parseMessageContent(
