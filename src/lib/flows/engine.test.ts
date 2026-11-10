@@ -847,6 +847,8 @@ describe('send_buttons / send_list interpolate {{vars.*}} (#553)', () => {
       id: 'dest-1',
       name: 'Goa',
       scope: 'domestic' as const,
+      delivery_method: 'pdf' as const,
+      itinerary_url: null,
       pdf: {
         name: 'Goa.pdf',
         url: 'https://storage.example/signed/goa.pdf',
@@ -902,6 +904,8 @@ describe('send_buttons / send_list interpolate {{vars.*}} (#553)', () => {
               destination: 'Goa',
               destination_id: 'dest-1',
               destination_scope: 'domestic',
+              destination_delivery_method: 'pdf',
+              destination_itinerary_url: null,
               destination_assignment_status: 'ambiguous',
               destination_readiness: 'ambiguous',
               destination_selection: {
@@ -923,6 +927,88 @@ describe('send_buttons / send_list interpolate {{vars.*}} (#553)', () => {
       );
       expect(h.sendMedia.mock.invocationCallOrder[0]).toBeLessThan(
         h.sendText.mock.invocationCallOrder[0]
+      );
+    });
+
+    it('sends a website itinerary link instead of a PDF when configured', async () => {
+      const itineraryUrl = 'https://travel.example/itineraries/goa';
+      h.state.destinations = [
+        {
+          ...destination,
+          delivery_method: 'link',
+          itinerary_url: itineraryUrl,
+          pdf: null,
+        },
+      ];
+
+      const result = await dispatch({
+        kind: 'interactive_reply',
+        reply_id: 'destination:dest-1',
+        reply_title: 'Goa',
+        meta_message_id: 'm-destination-link',
+      });
+
+      expect(result).toMatchObject({ consumed: true, outcome: 'advanced' });
+      expect(h.sendText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: `Here is the Goa itinerary: ${itineraryUrl}`,
+        })
+      );
+      expect(h.sendMedia).not.toHaveBeenCalled();
+      expect(h.state.updates).toContainEqual(
+        expect.objectContaining({
+          table: 'flow_runs',
+          row: {
+            vars: expect.objectContaining({
+              destination_delivery_method: 'link',
+              destination_itinerary_url: itineraryUrl,
+              destination_selection: expect.objectContaining({
+                delivery_method: 'link',
+                itinerary_url: itineraryUrl,
+              }),
+            }),
+          },
+        })
+      );
+    });
+
+    it('hands off if sending the configured website itinerary link fails', async () => {
+      const itineraryUrl = 'https://travel.example/itineraries/goa';
+      h.state.destinations = [
+        {
+          ...destination,
+          delivery_method: 'link',
+          itinerary_url: itineraryUrl,
+          pdf: null,
+        },
+      ];
+      h.sendText.mockRejectedValueOnce(
+        new Error('Meta rejected the itinerary link')
+      );
+
+      const result = await dispatch({
+        kind: 'interactive_reply',
+        reply_id: 'destination:dest-1',
+        reply_title: 'Goa',
+        meta_message_id: 'm-destination-link-failed',
+      });
+
+      expect(result).toMatchObject({ consumed: true, outcome: 'handed_off' });
+      expect(h.sendMedia).not.toHaveBeenCalled();
+      expect(h.state.events).toContainEqual(
+        expect.objectContaining({
+          event_type: 'error',
+          payload: expect.objectContaining({
+            reason: 'destination_link_send_failed',
+          }),
+        })
+      );
+      expect(h.sendText).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: expect.stringContaining(
+            "couldn't send that destination's information"
+          ),
+        })
       );
     });
 
@@ -1136,6 +1222,8 @@ describe('visual Travel CRM actions in the flow engine', () => {
         id: '00000000-0000-4000-8000-000000000001',
         name: 'Goa',
         scope: 'domestic',
+        delivery_method: 'pdf',
+        itinerary_url: null,
         pdf: null,
         assignment_status: 'assigned',
         assigned_employee_id: '11111111-1111-4111-8111-111111111111',
@@ -1286,6 +1374,198 @@ describe('visual Travel CRM actions in the flow engine', () => {
           }),
         }),
       })
+    );
+  });
+
+  it('sends the configured itinerary link and skips the PDF node for link destinations', async () => {
+    const destination = {
+      destination_id: '00000000-0000-4000-8000-000000000001',
+      destination_name: 'Goa',
+      travel_type: 'domestic',
+      assigned_employee_id: '11111111-1111-4111-8111-111111111111',
+      assignment_status: 'assigned',
+      delivery_method: 'link',
+      itinerary_url: 'https://travel.example/itineraries/goa',
+      pdf_url: null,
+      pdf_available: false,
+    };
+    h.state.activeRuns = [
+      {
+        ...RUN,
+        current_node_key: 'choose',
+        vars: {
+          destinations: [destination],
+          __travel_crm_destinations: [destination],
+        },
+      },
+    ];
+    h.state.nodes = [
+      {
+        id: 'n-choose',
+        flow_id: 'flow-1',
+        node_key: 'choose',
+        node_type: 'send_list',
+        config: {
+          text: 'Choose',
+          button_label: 'Destinations',
+          dynamic_source_var: 'destinations',
+          dynamic_title_field: 'destination_name',
+          dynamic_reply_id_field: 'destination_id',
+          dynamic_next_node_key: 'send-media',
+          selected_item_var: 'selected_destination',
+        },
+      },
+      {
+        id: 'n-media',
+        flow_id: 'flow-1',
+        node_key: 'send-media',
+        node_type: 'send_media',
+        config: {
+          media_type: 'document',
+          media_url: '{{vars.selected_destination.pdf_url}}',
+          next_node_key: 'ask-name',
+        },
+      },
+      {
+        id: 'n-name',
+        flow_id: 'flow-1',
+        node_key: 'ask-name',
+        node_type: 'collect_input',
+        config: {
+          prompt_text: 'What is your name?',
+          var_key: 'customer_name',
+          next_node_key: 'done',
+        },
+      },
+      {
+        id: 'n-done',
+        flow_id: 'flow-1',
+        node_key: 'done',
+        node_type: 'end',
+        config: {},
+      },
+    ];
+    h.sendText.mockClear();
+    h.sendMedia.mockClear();
+
+    const result = await dispatch({
+      kind: 'interactive_reply',
+      reply_id: '__flow_dynamic_option__:00000000-0000-4000-8000-000000000001',
+      reply_title: 'Goa',
+      meta_message_id: 'm-dynamic-link-selected',
+    });
+
+    expect(result).toMatchObject({ consumed: true, outcome: 'advanced' });
+    expect(h.sendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        text: 'Here is the Goa itinerary: https://travel.example/itineraries/goa',
+      })
+    );
+    expect(h.sendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: 'What is your name?' })
+    );
+    expect(h.sendMedia).not.toHaveBeenCalled();
+    expect(h.state.events).toContainEqual(
+      expect.objectContaining({
+        event_type: 'message_sent',
+        node_key: 'choose',
+        payload: expect.objectContaining({
+          node_type: 'destination_itinerary_link',
+          destination_id: destination.destination_id,
+        }),
+      })
+    );
+  });
+
+  it('continues sending the PDF document for PDF destinations in the generic list flow', async () => {
+    const destination = {
+      destination_id: '00000000-0000-4000-8000-000000000001',
+      destination_name: 'Goa',
+      travel_type: 'domestic',
+      assigned_employee_id: '11111111-1111-4111-8111-111111111111',
+      assignment_status: 'assigned',
+      delivery_method: 'pdf',
+      itinerary_url: null,
+      pdf_url: 'https://travel.example/signed/goa.pdf',
+      pdf_available: true,
+    };
+    h.state.activeRuns = [
+      {
+        ...RUN,
+        current_node_key: 'choose',
+        vars: {
+          destinations: [destination],
+          __travel_crm_destinations: [destination],
+        },
+      },
+    ];
+    h.state.nodes = [
+      {
+        id: 'n-choose',
+        flow_id: 'flow-1',
+        node_key: 'choose',
+        node_type: 'send_list',
+        config: {
+          text: 'Choose',
+          button_label: 'Destinations',
+          dynamic_source_var: 'destinations',
+          dynamic_title_field: 'destination_name',
+          dynamic_reply_id_field: 'destination_id',
+          dynamic_next_node_key: 'send-media',
+          selected_item_var: 'selected_destination',
+        },
+      },
+      {
+        id: 'n-media',
+        flow_id: 'flow-1',
+        node_key: 'send-media',
+        node_type: 'send_media',
+        config: {
+          media_type: 'document',
+          media_url: '{{vars.selected_destination.pdf_url}}',
+          next_node_key: 'ask-name',
+        },
+      },
+      {
+        id: 'n-name',
+        flow_id: 'flow-1',
+        node_key: 'ask-name',
+        node_type: 'collect_input',
+        config: {
+          prompt_text: 'What is your name?',
+          var_key: 'customer_name',
+          next_node_key: 'done',
+        },
+      },
+      {
+        id: 'n-done',
+        flow_id: 'flow-1',
+        node_key: 'done',
+        node_type: 'end',
+        config: {},
+      },
+    ];
+    h.sendText.mockClear();
+    h.sendMedia.mockClear();
+
+    const result = await dispatch({
+      kind: 'interactive_reply',
+      reply_id: '__flow_dynamic_option__:00000000-0000-4000-8000-000000000001',
+      reply_title: 'Goa',
+      meta_message_id: 'm-dynamic-pdf-selected',
+    });
+
+    expect(result).toMatchObject({ consumed: true, outcome: 'advanced' });
+    expect(h.sendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'document',
+        link: 'https://travel.example/signed/goa.pdf',
+      })
+    );
+    expect(h.sendText).not.toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('itinerary:') })
     );
   });
 

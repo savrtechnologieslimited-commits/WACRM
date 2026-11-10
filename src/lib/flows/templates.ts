@@ -292,7 +292,7 @@ const TRAVEL_ENQUIRY: FlowTemplate = {
   slug: "travel_enquiry_whatsapp",
   name: "Travel Enquiry WhatsApp Flow",
   description:
-    "Collect a deterministic travel enquiry over WhatsApp. Destination master lookup, destination PDFs, and SAVR CRM linkage require the SAVR integration.",
+    "Collect a deterministic travel enquiry over WhatsApp. Destination master lookup, destination PDFs or website itinerary links, and SAVR CRM linkage require the SAVR integration.",
   icon: "MessageSquare",
   trigger_type: "keyword",
   trigger_config: {

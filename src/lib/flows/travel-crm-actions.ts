@@ -11,6 +11,8 @@ export interface TravelCrmDestination {
   travel_type: TravelDestinationScope;
   assigned_employee_id: string;
   assignment_status: TravelDestination['assignment_status'];
+  delivery_method: TravelDestination['delivery_method'];
+  itinerary_url: TravelDestination['itinerary_url'];
   pdf_url: string | null;
   pdf_available: boolean;
 }
@@ -66,8 +68,14 @@ export async function getTravelCrmDestinations(
       travel_type: destination.scope,
       assigned_employee_id: destination.assigned_employee_id,
       assignment_status: destination.assignment_status,
-      pdf_url: destination.pdf?.url ?? null,
-      pdf_available: destination.pdf !== null,
+      delivery_method: destination.delivery_method,
+      itinerary_url: destination.itinerary_url,
+      pdf_url:
+        destination.delivery_method === 'pdf'
+          ? (destination.pdf?.url ?? null)
+          : null,
+      pdf_available:
+        destination.delivery_method === 'pdf' && destination.pdf !== null,
     };
     });
 }

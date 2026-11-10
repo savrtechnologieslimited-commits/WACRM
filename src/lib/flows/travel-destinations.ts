@@ -8,6 +8,8 @@ export interface TravelDestination {
   id: string;
   name: string;
   scope: TravelDestinationScope;
+  delivery_method: 'pdf' | 'link';
+  itinerary_url: string | null;
   pdf: { name: string; url: string } | null;
   assignment_status: DestinationAssignmentStatus;
   assigned_employee_id: string;
@@ -16,7 +18,10 @@ export interface TravelDestination {
 interface DestinationLookupResponse {
   version: 1;
   scope: TravelDestinationScope;
-  destinations: TravelDestination[];
+  destinations: Array<
+    Omit<TravelDestination, 'delivery_method' | 'itinerary_url'> &
+      Partial<Pick<TravelDestination, 'delivery_method' | 'itinerary_url'>>
+  >;
 }
 
 export interface DestinationListRow {
@@ -129,10 +134,39 @@ export async function fetchTravelDestinations(
       }
       pdf = { name: destination.pdf.name, url: pdfUrl.toString() };
     }
+    const deliveryMethod = destination.delivery_method ?? 'pdf';
+    const itineraryUrlValue = destination.itinerary_url;
+    let itineraryUrl: string | null = null;
+    if (deliveryMethod === 'link') {
+      if (typeof itineraryUrlValue !== 'string') {
+        throw new Error(
+          'Travel destination lookup returned an invalid itinerary link'
+        );
+      }
+      const websiteUrl = new URL(itineraryUrlValue);
+      if (
+        (websiteUrl.protocol !== 'https:' && websiteUrl.protocol !== 'http:') ||
+        !websiteUrl.hostname ||
+        websiteUrl.username ||
+        websiteUrl.password ||
+        pdf !== null
+      ) {
+        throw new Error(
+          'Travel destination lookup returned an unsafe or conflicting itinerary source'
+        );
+      }
+      itineraryUrl = websiteUrl.toString();
+    } else if (deliveryMethod !== 'pdf' || itineraryUrlValue != null) {
+      throw new Error(
+        'Travel destination lookup returned an invalid itinerary source'
+      );
+    }
     return {
       id: destination.id,
       name: destination.name.trim(),
       scope,
+      delivery_method: deliveryMethod,
+      itinerary_url: itineraryUrl,
       pdf,
       assignment_status: destination.assignment_status,
       assigned_employee_id: destination.assigned_employee_id,

@@ -33,6 +33,8 @@ describe('signed Travel CRM destination lookup', () => {
           id: destinationId(1),
           name: 'Goa',
           scope: 'domestic',
+          delivery_method: 'pdf',
+          itinerary_url: null,
           pdf: null,
           assignment_status: 'assigned',
           assigned_employee_id: EMPLOYEE_ID,
@@ -50,7 +52,13 @@ describe('signed Travel CRM destination lookup', () => {
 
     const destinations = await fetchTravelDestinations('domestic');
 
-    expect(destinations).toEqual(payload.destinations);
+    expect(destinations).toEqual([
+      {
+        ...payload.destinations[0],
+        delivery_method: 'pdf',
+        itinerary_url: null,
+      },
+    ]);
     const [url, init] = request.mock.calls[0];
     if (!init) throw new Error('fetch init was not provided');
     expect(url).toBeInstanceOf(URL);
@@ -83,6 +91,79 @@ describe('signed Travel CRM destination lookup', () => {
       'invalid response'
     );
   });
+
+  it('accepts a safe website itinerary link as the single delivery source', async () => {
+    vi.stubEnv(
+      'TRAVEL_CRM_DESTINATIONS_URL',
+      'https://travel.example/api/wacrm/destinations'
+    );
+    vi.stubEnv('WACRM_BRIDGE_SECRET', SECRET);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          version: 1,
+          scope: 'domestic',
+          destinations: [
+            {
+              id: destinationId(1),
+              name: 'Goa',
+              scope: 'domestic',
+              delivery_method: 'link',
+              itinerary_url: 'https://travel.example/itineraries/goa',
+              pdf: null,
+              assignment_status: 'assigned',
+              assigned_employee_id: EMPLOYEE_ID,
+            },
+          ],
+        })
+      )
+    );
+
+    await expect(fetchTravelDestinations('domestic')).resolves.toMatchObject([
+      {
+        delivery_method: 'link',
+        itinerary_url: 'https://travel.example/itineraries/goa',
+        pdf: null,
+      },
+    ]);
+  });
+
+  it('rejects a link destination that also supplies a PDF', async () => {
+    vi.stubEnv(
+      'TRAVEL_CRM_DESTINATIONS_URL',
+      'https://travel.example/api/wacrm/destinations'
+    );
+    vi.stubEnv('WACRM_BRIDGE_SECRET', SECRET);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json({
+          version: 1,
+          scope: 'domestic',
+          destinations: [
+            {
+              id: destinationId(1),
+              name: 'Goa',
+              scope: 'domestic',
+              delivery_method: 'link',
+              itinerary_url: 'https://travel.example/itineraries/goa',
+              pdf: {
+                name: 'goa.pdf',
+                url: 'https://travel.example/goa.pdf',
+              },
+              assignment_status: 'assigned',
+              assigned_employee_id: EMPLOYEE_ID,
+            },
+          ],
+        })
+      )
+    );
+
+    await expect(fetchTravelDestinations('domestic')).rejects.toThrow(
+      'conflicting itinerary source'
+    );
+  });
 });
 
 describe('destination list pagination', () => {
@@ -92,6 +173,8 @@ describe('destination list pagination', () => {
       id: destinationId(index + 1),
       name: `Destination ${index + 1}`,
       scope: 'domestic',
+      delivery_method: 'pdf',
+      itinerary_url: null,
       pdf: null,
       assignment_status: 'assigned',
       assigned_employee_id: EMPLOYEE_ID,

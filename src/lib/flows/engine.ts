@@ -755,12 +755,63 @@ async function sendDynamicListAndSuspend(
     .eq('id', run.id);
 }
 
+async function sendDestinationItineraryLink(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+  destinationId: string,
+  destinationName: string,
+  itineraryUrl: string | null
+): Promise<boolean> {
+  try {
+    if (!itineraryUrl) {
+      throw new Error(
+        'The selected destination has no configured itinerary link.'
+      );
+    }
+    const { whatsapp_message_id } = await engineSendText({
+      accountId: run.account_id,
+      userId: run.user_id,
+      conversationId: run.conversation_id!,
+      contactId: run.contact_id!,
+      text: `Here is the ${destinationName} itinerary: ${itineraryUrl}`,
+    });
+    await logEvent(db, run.id, 'message_sent', node.node_key, {
+      node_type: 'destination_itinerary_link',
+      destination_id: destinationId,
+      whatsapp_message_id,
+    });
+    return true;
+  } catch (err) {
+    await logEvent(db, run.id, 'error', node.node_key, {
+      reason: 'destination_link_send_failed',
+      destination_id: destinationId,
+      detail:
+        err instanceof Error
+          ? err.message.slice(0, 300)
+          : 'Itinerary link send failed',
+    });
+    await handoffFromDestinationPicker(
+      db,
+      run,
+      node,
+      "I couldn't send that destination's information. A travel agent will help you shortly.",
+      'destination_link_send_failed'
+    );
+    return false;
+  }
+}
+
 async function handleDynamicListReply(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
   replyId: string
-): Promise<{ kind: 'matched'; nextNodeKey: string } | { kind: 'unmatched' }> {
+): Promise<
+  | { kind: 'matched'; nextNodeKey: string }
+  | { kind: 'unmatched' }
+  | { kind: 'handed_off' }
+> {
   const cfg = node.config as unknown as SendListNodeConfig;
   const options = getDynamicListOptions(run, cfg);
   const pageKey = cfg.dynamic_page_var || `${cfg.dynamic_source_var}_page`;
@@ -847,6 +898,25 @@ async function handleDynamicListReply(
     captured_title_var: selectedTitleVar,
     assigned_employee_present: typeof assignedEmployeeId === 'string',
   });
+  if (trustedDestination?.delivery_method === 'link') {
+    const destinationName =
+      typeof trustedDestination.destination_name === 'string'
+        ? trustedDestination.destination_name
+        : selected.title;
+    const itineraryUrl =
+      typeof trustedDestination.itinerary_url === 'string'
+        ? trustedDestination.itinerary_url
+        : null;
+    const sent = await sendDestinationItineraryLink(
+      db,
+      run,
+      node,
+      selected.id,
+      destinationName,
+      itineraryUrl
+    );
+    if (!sent) return { kind: 'handed_off' };
+  }
   if (!cfg.dynamic_next_node_key) return { kind: 'unmatched' };
   return { kind: 'matched', nextNodeKey: cfg.dynamic_next_node_key };
 }
@@ -942,12 +1012,16 @@ async function handleDestinationReply(
     destination: selected.name,
     destination_id: selected.id,
     destination_scope: selected.scope,
+    destination_delivery_method: selected.delivery_method,
+    destination_itinerary_url: selected.itinerary_url,
     destination_assignment_status: selected.assignment_status,
     destination_readiness: selected.assignment_status,
     destination_selection: {
       id: selected.id,
       name: selected.name,
       scope: selected.scope,
+      delivery_method: selected.delivery_method,
+      itinerary_url: selected.itinerary_url,
       assignment_status: selected.assignment_status,
     },
   };
@@ -972,7 +1046,17 @@ async function handleDestinationReply(
     assignment_status: selected.assignment_status,
   });
 
-  if (selected.pdf) {
+  if (selected.delivery_method === 'link') {
+    const sent = await sendDestinationItineraryLink(
+      db,
+      run,
+      node,
+      selected.id,
+      selected.name,
+      selected.itinerary_url
+    );
+    if (!sent) return { kind: 'handed_off' };
+  } else if (selected.delivery_method === 'pdf' && selected.pdf) {
     try {
       const { whatsapp_message_id } = await engineSendMedia({
         accountId: run.account_id,
@@ -2134,6 +2218,13 @@ async function handleReplyForActiveRun(
           currentNode,
           message.reply_id
         );
+        if (result.kind === 'handed_off') {
+          return {
+            consumed: true,
+            flow_run_id: run.id,
+            outcome: 'handed_off',
+          };
+        }
         matched = result.kind === 'matched' ? result.nextNodeKey : null;
       } catch (err) {
         await logEvent(db, run.id, 'error', currentNode.node_key, {
