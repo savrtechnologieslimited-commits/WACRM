@@ -923,6 +923,7 @@ describe('send_buttons / send_list interpolate {{vars.*}} (#553)', () => {
           kind: 'document',
           link: destination.pdf.url,
           filename: 'Goa.pdf',
+          caption: 'Please check the attached itinerary',
         })
       );
       expect(h.sendMedia.mock.invocationCallOrder[0]).toBeLessThan(
@@ -951,7 +952,7 @@ describe('send_buttons / send_list interpolate {{vars.*}} (#553)', () => {
       expect(result).toMatchObject({ consumed: true, outcome: 'advanced' });
       expect(h.sendText).toHaveBeenCalledWith(
         expect.objectContaining({
-          text: `Here is the Goa itinerary: ${itineraryUrl}`,
+          text: `Please check the attached itinerary: ${itineraryUrl}`,
         })
       );
       expect(h.sendMedia).not.toHaveBeenCalled();

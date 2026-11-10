@@ -774,7 +774,7 @@ async function sendDestinationItineraryLink(
       userId: run.user_id,
       conversationId: run.conversation_id!,
       contactId: run.contact_id!,
-      text: `Here is the ${destinationName} itinerary: ${itineraryUrl}`,
+      text: `Please check the attached itinerary: ${itineraryUrl}`,
     });
     await logEvent(db, run.id, 'message_sent', node.node_key, {
       node_type: 'destination_itinerary_link',
@@ -1066,7 +1066,7 @@ async function handleDestinationReply(
         kind: 'document',
         link: selected.pdf.url,
         filename: selected.pdf.name.slice(0, 255),
-        caption: `${selected.name} travel information`,
+        caption: 'Please check the attached itinerary',
       });
       await logEvent(db, run.id, 'message_sent', node.node_key, {
         node_type: 'destination_pdf',
