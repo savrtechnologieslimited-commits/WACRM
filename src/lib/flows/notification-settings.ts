@@ -6,6 +6,7 @@ export interface FlowNotificationSettings {
   on_completion: boolean;
   inactivity_enabled: boolean;
   inactivity_minutes: number;
+  destination_selected_enabled: boolean;
 }
 
 export function getFlowNotificationSettings(
@@ -42,6 +43,10 @@ export function getFlowNotificationSettings(
       minutes <= MAX_FLOW_INACTIVITY_MINUTES
         ? minutes
         : DEFAULT_FLOW_INACTIVITY_MINUTES,
+    destination_selected_enabled:
+      typeof settings.destination_selected_enabled === 'boolean'
+        ? settings.destination_selected_enabled
+        : false,
   };
 }
 

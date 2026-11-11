@@ -212,6 +212,32 @@ export function EditorHeader() {
         <div className="flex flex-wrap items-center justify-between gap-3 pl-6">
           <div className="min-w-0">
             <p className="text-foreground text-sm">
+              {t('destinationSelectedNotificationOption')}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {t('destinationSelectedNotificationHelp')}
+            </p>
+          </div>
+          <Switch
+            checked={notificationSettings.destination_selected_enabled}
+            onCheckedChange={(checked) =>
+              setState((current) => ({
+                ...current,
+                trigger_config: {
+                  ...current.trigger_config,
+                  notification_settings: {
+                    ...getFlowNotificationSettings(current.trigger_config),
+                    destination_selected_enabled: !!checked,
+                  },
+                },
+              }))
+            }
+            aria-label={t('destinationSelectedNotificationOption')}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 pl-6">
+          <div className="min-w-0">
+            <p className="text-foreground text-sm">
               {t('inactivityNotificationOption')}
             </p>
             <p className="text-muted-foreground text-xs">

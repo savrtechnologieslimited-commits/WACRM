@@ -31,6 +31,7 @@ export interface TravelCrmEnquiryPayload {
   notify_on_completion: boolean;
   inactivity_after_minutes: number;
   inactivity_notification: boolean;
+  destination_selected_notification: boolean;
   contact: {
     name: string | null;
     email: string | null;
@@ -153,6 +154,27 @@ export async function notifyTravelCrmFlowInactivity(
   if (!response.ok) {
     throw new Error(
       `Travel CRM inactivity notification returned HTTP ${response.status}.`
+    );
+  }
+}
+
+export async function notifyTravelCrmDestinationSelected(
+  payload: TravelCrmEnquiryPayload
+): Promise<void> {
+  const endpoint = process.env.TRAVEL_CRM_FLOW_SYNC_URL;
+  const response = await signedTravelCrmPost(
+    endpoint,
+    {
+      ...payload,
+      is_partial: true,
+      inactivity_notification: false,
+      destination_selected_notification: true,
+    },
+    10_000
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Travel CRM destination-selected notification returned HTTP ${response.status}.`
     );
   }
 }

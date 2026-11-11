@@ -11,6 +11,7 @@ describe('per-flow notification settings', () => {
       on_completion: true,
       inactivity_enabled: true,
       inactivity_minutes: DEFAULT_FLOW_INACTIVITY_MINUTES,
+      destination_selected_enabled: false,
     });
   });
 
@@ -21,12 +22,14 @@ describe('per-flow notification settings', () => {
           on_completion: false,
           inactivity_enabled: true,
           inactivity_minutes: 45,
+          destination_selected_enabled: true,
         },
       })
     ).toEqual({
       on_completion: false,
       inactivity_enabled: true,
       inactivity_minutes: 45,
+      destination_selected_enabled: true,
     });
   });
 
@@ -40,6 +43,7 @@ describe('per-flow notification settings', () => {
       on_completion: false,
       inactivity_enabled: false,
       inactivity_minutes: DEFAULT_FLOW_INACTIVITY_MINUTES,
+      destination_selected_enabled: false,
     });
   });
 

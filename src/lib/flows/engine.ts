@@ -51,6 +51,7 @@ import {
   completeTravelCrmEnquiry,
   getTravelCrmDestination,
   getTravelCrmDestinations,
+  notifyTravelCrmDestinationSelected,
   shouldNotifyCrmOnFlowCompletion,
   type TravelCrmDestination,
   type TravelCrmEnquiryPayload,
@@ -834,6 +835,7 @@ async function handleDynamicListReply(
       dynamic_selection: true,
       destination_none: true,
     });
+    await notifyTravelCrmDestinationSelection(db, run, node.node_key);
     return { kind: 'matched', nextNodeKey: cfg.none_next_node_key };
   }
   const employeeField =
@@ -877,6 +879,9 @@ async function handleDynamicListReply(
     captured_title_var: selectedTitleVar,
     assigned_employee_present: typeof assignedEmployeeId === 'string',
   });
+  if (trustedDestination) {
+    await notifyTravelCrmDestinationSelection(db, run, node.node_key);
+  }
   if (!cfg.dynamic_next_node_key) return { kind: 'unmatched' };
   return { kind: 'matched', nextNodeKey: cfg.dynamic_next_node_key };
 }
@@ -981,6 +986,7 @@ async function handleDestinationReply(
       id: selected.id,
       name: selected.name,
       scope: selected.scope,
+      assigned_employee_id: selected.assigned_employee_id,
       delivery_method: selected.delivery_method,
       itinerary_url: selected.itinerary_url,
       assignment_status: selected.assignment_status,
@@ -1006,6 +1012,7 @@ async function handleDestinationReply(
     destination_scope: selected.scope,
     assignment_status: selected.assignment_status,
   });
+  await notifyTravelCrmDestinationSelection(db, run, node.node_key);
 
   if (selected.delivery_method === 'link') {
     try {
@@ -1429,7 +1436,8 @@ export async function buildTravelCrmEnquiryPayload(
   run: FlowRunRow,
   variableMap: Record<string, string>,
   isPartial: boolean,
-  handoffRequested: boolean
+  handoffRequested: boolean,
+  destinationOverride?: TravelCrmEnquiryPayload['destination']
 ): Promise<TravelCrmEnquiryPayload> {
   if (!run.contact_id) {
     throw new Error('The flow run has no contact to link to the enquiry.');
@@ -1537,21 +1545,108 @@ export async function buildTravelCrmEnquiryPayload(
     notify_on_completion: shouldNotifyCrmOnFlowCompletion(triggerConfig),
     inactivity_after_minutes: notificationSettings.inactivity_minutes,
     inactivity_notification: false,
+    destination_selected_notification: false,
     contact: {
       name: name?.slice(0, 200) ?? null,
       email: email?.slice(0, 254) ?? null,
       phone: phone?.slice(0, 32) ?? null,
     },
-    destination: verifiedDestination
-      ? {
-          id: verifiedDestination.destination_id,
-          name: verifiedDestination.destination_name,
-          scope: verifiedDestination.travel_type,
-          assignment_status: 'assigned',
-          assigned_employee_id: verifiedDestination.assigned_employee_id,
-        }
-      : null,
+    destination:
+      destinationOverride ??
+      (verifiedDestination
+        ? {
+            id: verifiedDestination.destination_id,
+            name: verifiedDestination.destination_name,
+            scope: verifiedDestination.travel_type,
+            assignment_status: 'assigned',
+            assigned_employee_id: verifiedDestination.assigned_employee_id,
+          }
+        : null),
     answers,
+  };
+}
+
+async function notifyTravelCrmDestinationSelection(
+  db: AdminClient,
+  run: FlowRunRow,
+  nodeKey: string
+): Promise<void> {
+  const { data: flow, error } = await db
+    .from('flows')
+    .select('trigger_config')
+    .eq('id', run.flow_id)
+    .maybeSingle();
+  if (error || !flow) {
+    await logEvent(db, run.id, 'error', nodeKey, {
+      reason: 'travel_crm_destination_notification_settings_load_failed',
+      detail: error?.message ?? 'The flow was not found.',
+    });
+    return;
+  }
+  if (
+    !getFlowNotificationSettings(flow.trigger_config)
+      .destination_selected_enabled
+  ) {
+    return;
+  }
+
+  try {
+    const destinationOverride = getDestinationSelectedOverride(run.vars);
+    const payload = await buildTravelCrmEnquiryPayload(
+      db,
+      run,
+      {},
+      true,
+      false,
+      destinationOverride
+    );
+    await notifyTravelCrmDestinationSelected(payload);
+    await logEvent(db, run.id, 'node_entered', nodeKey, {
+      notification: 'travel_crm_destination_selected',
+      destination_id: payload.destination?.id ?? null,
+    });
+  } catch (error) {
+    await logEvent(db, run.id, 'error', nodeKey, {
+      reason: 'travel_crm_destination_selected_notification_failed',
+      detail:
+        error instanceof Error
+          ? error.message.slice(0, 300)
+          : 'notification failed',
+    });
+  }
+}
+
+function getDestinationSelectedOverride(
+  vars: Record<string, unknown>
+): TravelCrmEnquiryPayload['destination'] | undefined {
+  const selection = vars.destination_selection;
+  if (!isRecord(selection)) return undefined;
+
+  const { id, name, scope, assignment_status: assignmentStatus } = selection;
+  if (
+    typeof id !== 'string' ||
+    !UUID_PATTERN.test(id) ||
+    typeof name !== 'string' ||
+    !name.trim() ||
+    (scope !== 'domestic' && scope !== 'international') ||
+    (assignmentStatus !== 'assigned' &&
+      assignmentStatus !== 'unassigned' &&
+      assignmentStatus !== 'ambiguous')
+  ) {
+    return undefined;
+  }
+
+  const assignedEmployeeId = selection.assigned_employee_id;
+  return {
+    id,
+    name: name.trim().slice(0, 200),
+    scope,
+    assignment_status: assignmentStatus,
+    assigned_employee_id:
+      typeof assignedEmployeeId === 'string' &&
+      UUID_PATTERN.test(assignedEmployeeId)
+        ? assignedEmployeeId
+        : null,
   };
 }
 

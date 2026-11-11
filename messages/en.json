@@ -1335,6 +1335,8 @@
       "notificationSettings": "Flow notifications",
       "notificationSettingsHelp": "Choose which events notify the Travel CRM team for this flow. Selected destination assignees are notified; None or unassigned destinations go to admins and managers.",
       "completionNotificationOption": "When the customer completes the flow",
+      "destinationSelectedNotificationOption": "When the customer selects a destination",
+      "destinationSelectedNotificationHelp": "Notify immediately that someone showed interest in this destination through WhatsApp.",
       "inactivityNotificationOption": "When the customer stops before completing",
       "inactivityNotificationHelp": "Start after destination selection; replies in this flow reset the timer.",
       "inactivityDelayLabel": "Notify after",
