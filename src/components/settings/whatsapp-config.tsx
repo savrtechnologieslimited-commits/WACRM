@@ -497,10 +497,6 @@ export function WhatsAppConfig() {
 
   async function handleReset() {
     if (!config) return;
-    if (isCoexistenceConnection) {
-      toast.error(t('embeddedManualEditBlocked'));
-      return;
-    }
     if (!confirm(t('resetConfirm'))) {
       return;
     }
@@ -1074,7 +1070,7 @@ export function WhatsAppConfig() {
             <Button
               variant="outline"
               onClick={handleReset}
-              disabled={resetting || isCoexistenceConnection}
+              disabled={resetting}
               className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
             >
               {resetting ? (
