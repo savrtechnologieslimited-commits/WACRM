@@ -42,6 +42,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
+import { getAutomationListDescription } from "@/lib/automations/list-description"
 import { getFlowTemplate } from "@/lib/flows/templates"
 import { triggerMeta, formatRelative, isKnownTrigger } from "@/lib/automations/trigger-meta"
 import { cn } from "@/lib/utils"
@@ -81,7 +82,32 @@ export default function AutomationsPage() {
         .select("*")
         .order("created_at", { ascending: false })
       if (fetchErr) throw fetchErr
-      setAutomations((data ?? []) as Automation[])
+      const automationRows = (data ?? []) as Automation[]
+      const waitConfigs = new Map<string, unknown>()
+      if (automationRows.length > 0) {
+        const { data: waitSteps, error: waitStepsError } = await supabase
+          .from("automation_steps")
+          .select("automation_id,step_config,position")
+          .in("automation_id", automationRows.map((automation) => automation.id))
+          .eq("step_type", "wait")
+          .is("parent_step_id", null)
+          .order("position", { ascending: true })
+        if (waitStepsError) throw waitStepsError
+        for (const step of waitSteps ?? []) {
+          if (!waitConfigs.has(step.automation_id)) {
+            waitConfigs.set(step.automation_id, step.step_config)
+          }
+        }
+      }
+      setAutomations(
+        automationRows.map((automation) => ({
+          ...automation,
+          description: getAutomationListDescription(
+            automation.description,
+            waitConfigs.get(automation.id),
+          ) ?? undefined,
+        })),
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load automations")
     }
