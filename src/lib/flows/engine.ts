@@ -51,9 +51,12 @@ import {
   completeTravelCrmEnquiry,
   getTravelCrmDestination,
   getTravelCrmDestinations,
+  shouldNotifyCrmOnFlowCompletion,
   type TravelCrmDestination,
   type TravelCrmEnquiryPayload,
 } from './travel-crm-actions';
+import { DESTINATION_SELECTED_AT_VAR } from './destination-inactivity';
+import { getFlowNotificationSettings } from './notification-settings';
 import {
   type CollectInputNodeConfig,
   type TravelCrmCompleteEnquiryNodeConfig,
@@ -653,14 +656,18 @@ export function getDynamicListOptions(
         : '';
     const title = typeof rawTitle === 'string' ? rawTitle.trim() : '';
     if (!id || id.length > 150 || !title) {
-      throw new Error(`Dynamic list item ${index + 1} has no valid ID or title.`);
+      throw new Error(
+        `Dynamic list item ${index + 1} has no valid ID or title.`
+      );
     }
     if (
       rawDescription !== undefined &&
       rawDescription !== null &&
       typeof rawDescription !== 'string'
     ) {
-      throw new Error(`Dynamic list item ${index + 1} has an invalid description.`);
+      throw new Error(
+        `Dynamic list item ${index + 1} has an invalid description.`
+      );
     }
     return {
       id,
@@ -694,18 +701,26 @@ export function getDynamicListOptions(
 export function dynamicListPage(
   options: DynamicListOption[],
   requestedPage: number
-): { rows: Array<{ id: string; title: string; description?: string }>; page: number } {
+): {
+  rows: Array<{ id: string; title: string; description?: string }>;
+  page: number;
+} {
   const pageSize = options.length > 10 ? DYNAMIC_PAGE_SIZE : 10;
   const pageCount = Math.max(1, Math.ceil(options.length / pageSize));
-  const page = Math.min(Math.max(Math.floor(requestedPage) || 0, 0), pageCount - 1);
+  const page = Math.min(
+    Math.max(Math.floor(requestedPage) || 0, 0),
+    pageCount - 1
+  );
   const start = page * pageSize;
   const rows = options.slice(start, start + pageSize).map((option) => ({
     id: `__flow_dynamic_option__:${option.id}`,
     title: option.title,
     ...(option.description ? { description: option.description } : {}),
   }));
-  if (page > 0) rows.push({ id: DYNAMIC_PAGE_PREVIOUS, title: 'Previous page' });
-  if (page < pageCount - 1) rows.push({ id: DYNAMIC_PAGE_NEXT, title: 'Next page' });
+  if (page > 0)
+    rows.push({ id: DYNAMIC_PAGE_PREVIOUS, title: 'Previous page' });
+  if (page < pageCount - 1)
+    rows.push({ id: DYNAMIC_PAGE_NEXT, title: 'Next page' });
   return { rows, page };
 }
 
@@ -755,63 +770,12 @@ async function sendDynamicListAndSuspend(
     .eq('id', run.id);
 }
 
-async function sendDestinationItineraryLink(
-  db: AdminClient,
-  run: FlowRunRow,
-  node: FlowNodeRow,
-  destinationId: string,
-  destinationName: string,
-  itineraryUrl: string | null
-): Promise<boolean> {
-  try {
-    if (!itineraryUrl) {
-      throw new Error(
-        'The selected destination has no configured itinerary link.'
-      );
-    }
-    const { whatsapp_message_id } = await engineSendText({
-      accountId: run.account_id,
-      userId: run.user_id,
-      conversationId: run.conversation_id!,
-      contactId: run.contact_id!,
-      text: `Please check the attached itinerary: ${itineraryUrl}`,
-    });
-    await logEvent(db, run.id, 'message_sent', node.node_key, {
-      node_type: 'destination_itinerary_link',
-      destination_id: destinationId,
-      whatsapp_message_id,
-    });
-    return true;
-  } catch (err) {
-    await logEvent(db, run.id, 'error', node.node_key, {
-      reason: 'destination_link_send_failed',
-      destination_id: destinationId,
-      detail:
-        err instanceof Error
-          ? err.message.slice(0, 300)
-          : 'Itinerary link send failed',
-    });
-    await handoffFromDestinationPicker(
-      db,
-      run,
-      node,
-      "I couldn't send that destination's information. A travel agent will help you shortly.",
-      'destination_link_send_failed'
-    );
-    return false;
-  }
-}
-
 async function handleDynamicListReply(
   db: AdminClient,
   run: FlowRunRow,
   node: FlowNodeRow,
   replyId: string
-): Promise<
-  | { kind: 'matched'; nextNodeKey: string }
-  | { kind: 'unmatched' }
-  | { kind: 'handed_off' }
-> {
+): Promise<{ kind: 'matched'; nextNodeKey: string } | { kind: 'unmatched' }> {
   const cfg = node.config as unknown as SendListNodeConfig;
   const options = getDynamicListOptions(run, cfg);
   const pageKey = cfg.dynamic_page_var || `${cfg.dynamic_source_var}_page`;
@@ -824,7 +788,14 @@ async function handleDynamicListReply(
       pageCount - 1
     );
     if (nextPage === currentPage) return { kind: 'unmatched' };
-    if (!(await persistRunVars(db, run, { ...run.vars, [pageKey]: nextPage }, node.node_key))) {
+    if (
+      !(await persistRunVars(
+        db,
+        run,
+        { ...run.vars, [pageKey]: nextPage },
+        node.node_key
+      ))
+    ) {
       return { kind: 'unmatched' };
     }
     return { kind: 'matched', nextNodeKey: node.node_key };
@@ -832,11 +803,14 @@ async function handleDynamicListReply(
 
   const prefix = '__flow_dynamic_option__:';
   if (!replyId.startsWith(prefix)) return { kind: 'unmatched' };
-  const selected = options.find((option) => option.id === replyId.slice(prefix.length));
+  const selected = options.find(
+    (option) => option.id === replyId.slice(prefix.length)
+  );
   if (!selected) return { kind: 'unmatched' };
 
   const selectedIdVar = cfg.selected_id_var || 'selected_destination_id';
-  const selectedTitleVar = cfg.selected_title_var || 'selected_destination_name';
+  const selectedTitleVar =
+    cfg.selected_title_var || 'selected_destination_name';
   const selectedItemVar = cfg.selected_item_var || 'selected_destination';
   const selectedEmployeeVar =
     cfg.selected_assigned_employee_id_var || 'selected_assigned_employee_id';
@@ -851,6 +825,7 @@ async function handleDynamicListReply(
       [pageKey]: 0,
       __travel_crm_destination: null,
       __travel_crm_destination_none: true,
+      [DESTINATION_SELECTED_AT_VAR]: new Date().toISOString(),
     };
     if (!(await persistRunVars(db, run, vars, node.node_key))) {
       return { kind: 'unmatched' };
@@ -861,7 +836,8 @@ async function handleDynamicListReply(
     });
     return { kind: 'matched', nextNodeKey: cfg.none_next_node_key };
   }
-  const employeeField = cfg.dynamic_assigned_employee_id_field || 'assigned_employee_id';
+  const employeeField =
+    cfg.dynamic_assigned_employee_id_field || 'assigned_employee_id';
   const assignedEmployeeId = resolveVariablePath(selected.item, employeeField);
   const trustedDestinations = run.vars.__travel_crm_destinations;
   const trustedDestination = Array.isArray(trustedDestinations)
@@ -887,7 +863,10 @@ async function handleDynamicListReply(
       trustedDestination?.assigned_employee_id ??
       (typeof assignedEmployeeId === 'string' ? assignedEmployeeId : null),
     [pageKey]: 0,
-    ...(trustedDestination ? { __travel_crm_destination: trustedDestination } : {}),
+    [DESTINATION_SELECTED_AT_VAR]: new Date().toISOString(),
+    ...(trustedDestination
+      ? { __travel_crm_destination: trustedDestination }
+      : {}),
   };
   if (!(await persistRunVars(db, run, vars, node.node_key))) {
     return { kind: 'unmatched' };
@@ -898,25 +877,6 @@ async function handleDynamicListReply(
     captured_title_var: selectedTitleVar,
     assigned_employee_present: typeof assignedEmployeeId === 'string',
   });
-  if (trustedDestination?.delivery_method === 'link') {
-    const destinationName =
-      typeof trustedDestination.destination_name === 'string'
-        ? trustedDestination.destination_name
-        : selected.title;
-    const itineraryUrl =
-      typeof trustedDestination.itinerary_url === 'string'
-        ? trustedDestination.itinerary_url
-        : null;
-    const sent = await sendDestinationItineraryLink(
-      db,
-      run,
-      node,
-      selected.id,
-      destinationName,
-      itineraryUrl
-    );
-    if (!sent) return { kind: 'handed_off' };
-  }
   if (!cfg.dynamic_next_node_key) return { kind: 'unmatched' };
   return { kind: 'matched', nextNodeKey: cfg.dynamic_next_node_key };
 }
@@ -1016,6 +976,7 @@ async function handleDestinationReply(
     destination_itinerary_url: selected.itinerary_url,
     destination_assignment_status: selected.assignment_status,
     destination_readiness: selected.assignment_status,
+    [DESTINATION_SELECTED_AT_VAR]: new Date().toISOString(),
     destination_selection: {
       id: selected.id,
       name: selected.name,
@@ -1047,15 +1008,42 @@ async function handleDestinationReply(
   });
 
   if (selected.delivery_method === 'link') {
-    const sent = await sendDestinationItineraryLink(
-      db,
-      run,
-      node,
-      selected.id,
-      selected.name,
-      selected.itinerary_url
-    );
-    if (!sent) return { kind: 'handed_off' };
+    try {
+      if (!selected.itinerary_url) {
+        throw new Error(
+          'The selected destination has no configured itinerary link.'
+        );
+      }
+      const { whatsapp_message_id } = await engineSendText({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id!,
+        contactId: run.contact_id!,
+        text: `Please check the attached itinerary: ${selected.itinerary_url}`,
+      });
+      await logEvent(db, run.id, 'message_sent', node.node_key, {
+        node_type: 'destination_itinerary_link',
+        destination_id: selected.id,
+        whatsapp_message_id,
+      });
+    } catch (err) {
+      await logEvent(db, run.id, 'error', node.node_key, {
+        reason: 'destination_link_send_failed',
+        destination_id: selected.id,
+        detail:
+          err instanceof Error
+            ? err.message.slice(0, 300)
+            : 'Itinerary link send failed',
+      });
+      await handoffFromDestinationPicker(
+        db,
+        run,
+        node,
+        "I couldn't send that destination's information. A travel agent will help you shortly.",
+        'destination_link_send_failed'
+      );
+      return { kind: 'handed_off' };
+    }
   } else if (selected.delivery_method === 'pdf' && selected.pdf) {
     try {
       const { whatsapp_message_id } = await engineSendMedia({
@@ -1212,7 +1200,10 @@ async function executeHandoff(
     } catch (err) {
       await logEvent(db, run.id, 'error', node.node_key, {
         reason: 'travel_crm_handoff_completion_failed',
-        detail: err instanceof Error ? err.message.slice(0, 300) : 'completion failed',
+        detail:
+          err instanceof Error
+            ? err.message.slice(0, 300)
+            : 'completion failed',
       });
     }
   }
@@ -1302,8 +1293,8 @@ export function interpolateVars(
   return template.replace(
     /\{\{(?:vars\.)?([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*)\}\}/g,
     (_, path: string) => {
-    const v = resolveVariablePath(vars, path);
-    return v === undefined || v === null ? '' : String(v);
+      const v = resolveVariablePath(vars, path);
+      return v === undefined || v === null ? '' : String(v);
     }
   );
 }
@@ -1336,7 +1327,10 @@ async function persistRunVars(
   vars: Record<string, unknown>,
   nodeKey: string
 ): Promise<boolean> {
-  const { error } = await db.from('flow_runs').update({ vars }).eq('id', run.id);
+  const { error } = await db
+    .from('flow_runs')
+    .update({ vars })
+    .eq('id', run.id);
   if (error) {
     await logEvent(db, run.id, 'error', nodeKey, {
       reason: 'flow_variables_persist_failed',
@@ -1365,7 +1359,8 @@ function getVerifiedDestination(
     !UUID_PATTERN.test(value.destination_id) ||
     typeof value.destination_name !== 'string' ||
     !value.destination_name.trim() ||
-    (value.travel_type !== 'domestic' && value.travel_type !== 'international') ||
+    (value.travel_type !== 'domestic' &&
+      value.travel_type !== 'international') ||
     value.assignment_status !== 'assigned' ||
     typeof value.assigned_employee_id !== 'string' ||
     !UUID_PATTERN.test(value.assigned_employee_id)
@@ -1410,7 +1405,8 @@ function safeFlowAnswers(
     if (
       !/^[a-zA-Z0-9_]{1,100}$/.test(field) ||
       !sourceKey ||
-      (Object.keys(answers).length >= 50 && !Object.prototype.hasOwnProperty.call(answers, field))
+      (Object.keys(answers).length >= 50 &&
+        !Object.prototype.hasOwnProperty.call(answers, field))
     ) {
       continue;
     }
@@ -1428,7 +1424,7 @@ function safeFlowAnswers(
   return answers;
 }
 
-async function buildTravelCrmEnquiryPayload(
+export async function buildTravelCrmEnquiryPayload(
   db: AdminClient,
   run: FlowRunRow,
   variableMap: Record<string, string>,
@@ -1438,17 +1434,25 @@ async function buildTravelCrmEnquiryPayload(
   if (!run.contact_id) {
     throw new Error('The flow run has no contact to link to the enquiry.');
   }
-  const [{ data: contact, error: contactError }, { data: flow, error: flowError }] =
-    await Promise.all([
-      db
-        .from('contacts')
-        .select('id, name, phone, email')
-        .eq('id', run.contact_id)
-        .maybeSingle(),
-      db.from('flows').select('name').eq('id', run.flow_id).maybeSingle(),
-    ]);
+  const [
+    { data: contact, error: contactError },
+    { data: flow, error: flowError },
+  ] = await Promise.all([
+    db
+      .from('contacts')
+      .select('id, name, phone, email')
+      .eq('id', run.contact_id)
+      .maybeSingle(),
+    db
+      .from('flows')
+      .select('name, trigger_config')
+      .eq('id', run.flow_id)
+      .maybeSingle(),
+  ]);
   if (contactError || !contact) {
-    throw new Error(contactError?.message || 'The WACRM contact could not be loaded.');
+    throw new Error(
+      contactError?.message || 'The WACRM contact could not be loaded.'
+    );
   }
   if (flowError || !flow) {
     throw new Error(flowError?.message || 'The flow name could not be loaded.');
@@ -1460,8 +1464,10 @@ async function buildTravelCrmEnquiryPayload(
   };
   const stringValue = (value: unknown): string | null =>
     typeof value === 'string' && value.trim() ? value.trim() : null;
-  const name = stringValue(mapped('customer_name')) || contact.name?.trim() || null;
-  const rawEmail = stringValue(mapped('email')) || contact.email?.trim() || null;
+  const name =
+    stringValue(mapped('customer_name')) || contact.name?.trim() || null;
+  const rawEmail =
+    stringValue(mapped('email')) || contact.email?.trim() || null;
   const email =
     rawEmail &&
     rawEmail.length <= 254 &&
@@ -1471,13 +1477,13 @@ async function buildTravelCrmEnquiryPayload(
   const rawPhone =
     contact.phone?.trim() || stringValue(mapped('whatsapp_number')) || null;
   const phone =
-    rawPhone && rawPhone.length >= 7 && rawPhone.length <= 32
-      ? rawPhone
-      : null;
+    rawPhone && rawPhone.length >= 7 && rawPhone.length <= 32 ? rawPhone : null;
   const verifiedDestination =
     run.vars.__travel_crm_destination_none === true
       ? null
       : getVerifiedDestination(run.vars);
+  const triggerConfig = flow.trigger_config as Record<string, unknown> | null;
+  const notificationSettings = getFlowNotificationSettings(triggerConfig);
   const answers = safeFlowAnswers(run.vars, variableMap);
   if (run.vars.__travel_crm_destination_none === true) {
     const requestedDestination =
@@ -1498,7 +1504,11 @@ async function buildTravelCrmEnquiryPayload(
     answers.destination_id = null;
     answers.destination_name = requestedDestination;
     answers.assigned_employee_id = null;
-    for (const key of ['destination_id', 'destination_name', 'assigned_employee_id']) {
+    for (const key of [
+      'destination_id',
+      'destination_name',
+      'assigned_employee_id',
+    ]) {
       const answerKey = variableMap[key];
       if (answerKey) delete answers[answerKey];
     }
@@ -1524,6 +1534,9 @@ async function buildTravelCrmEnquiryPayload(
     completed_at: new Date().toISOString(),
     is_partial: isPartial,
     handoff_requested: handoffRequested,
+    notify_on_completion: shouldNotifyCrmOnFlowCompletion(triggerConfig),
+    inactivity_after_minutes: notificationSettings.inactivity_minutes,
+    inactivity_notification: false,
     contact: {
       name: name?.slice(0, 200) ?? null,
       email: email?.slice(0, 254) ?? null,
@@ -1662,7 +1675,9 @@ async function advanceFromNodeKey(
             actionConfig.travel_type
           );
           if (destinations.length === 0) {
-            throw new Error('Travel CRM returned no assigned active destinations.');
+            throw new Error(
+              'Travel CRM returned no assigned active destinations.'
+            );
           }
           const nextVars = {
             ...run.vars,
@@ -1672,7 +1687,12 @@ async function advanceFromNodeKey(
             __travel_crm_destination: null,
           };
           if (!(await persistRunVars(db, run, nextVars, node.node_key))) {
-            await endRun(db, run.id, 'failed', 'travel_crm_vars_persist_failed');
+            await endRun(
+              db,
+              run.id,
+              'failed',
+              'travel_crm_vars_persist_failed'
+            );
             return { outcome: 'completed' };
           }
         } else if (node.node_type === 'travel_crm_get_destination') {
@@ -1683,9 +1703,14 @@ async function advanceFromNodeKey(
             typeof destinationId !== 'string' ||
             (scope !== 'domestic' && scope !== 'international')
           ) {
-            throw new Error('A valid destination ID and travel type are required.');
+            throw new Error(
+              'A valid destination ID and travel type are required.'
+            );
           }
-          const destination = await getTravelCrmDestination(scope, destinationId);
+          const destination = await getTravelCrmDestination(
+            scope,
+            destinationId
+          );
           const nextVars = {
             ...run.vars,
             [actionConfig.result_var]: destination,
@@ -1693,7 +1718,12 @@ async function advanceFromNodeKey(
             __travel_crm_destination: destination,
           };
           if (!(await persistRunVars(db, run, nextVars, node.node_key))) {
-            await endRun(db, run.id, 'failed', 'travel_crm_vars_persist_failed');
+            await endRun(
+              db,
+              run.id,
+              'failed',
+              'travel_crm_vars_persist_failed'
+            );
             return { outcome: 'completed' };
           }
         } else {
@@ -1725,7 +1755,12 @@ async function advanceFromNodeKey(
             [actionConfig.error_var]: null,
           };
           if (!(await persistRunVars(db, run, nextVars, node.node_key))) {
-            await endRun(db, run.id, 'failed', 'travel_crm_vars_persist_failed');
+            await endRun(
+              db,
+              run.id,
+              'failed',
+              'travel_crm_vars_persist_failed'
+            );
             return { outcome: 'completed' };
           }
           const { error: acknowledgeError } = await db
@@ -1750,7 +1785,9 @@ async function advanceFromNodeKey(
         currentKey = cfg.success_next_node_key;
       } catch (err) {
         const errorMessage =
-          err instanceof Error ? err.message.slice(0, 300) : 'Travel CRM action failed.';
+          err instanceof Error
+            ? err.message.slice(0, 300)
+            : 'Travel CRM action failed.';
         await logEvent(db, run.id, 'error', node.node_key, {
           reason: 'travel_crm_action_failed',
           detail: errorMessage,
@@ -1785,7 +1822,12 @@ async function advanceFromNodeKey(
     if (node.node_type === 'send_media') {
       const cfg = node.config as unknown as SendMediaNodeConfig;
       const mediaUrl = interpolateVars(cfg.media_url, run.vars);
-      if (!mediaUrl && /\{\{(?:vars\.)?[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*\}\}/.test(cfg.media_url)) {
+      if (
+        !mediaUrl &&
+        /\{\{(?:vars\.)?[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*\}\}/.test(
+          cfg.media_url
+        )
+      ) {
         await logEvent(db, run.id, 'node_entered', node.node_key, {
           node_type: 'send_media',
           skipped: true,
@@ -2214,7 +2256,10 @@ async function handleReplyForActiveRun(
       currentNode.node_type === 'send_list')
   ) {
     const listConfig = currentNode.config as unknown as SendListNodeConfig;
-    if (currentNode.node_type === 'send_list' && listConfig.dynamic_source_var) {
+    if (
+      currentNode.node_type === 'send_list' &&
+      listConfig.dynamic_source_var
+    ) {
       try {
         const result = await handleDynamicListReply(
           db,
@@ -2222,18 +2267,12 @@ async function handleReplyForActiveRun(
           currentNode,
           message.reply_id
         );
-        if (result.kind === 'handed_off') {
-          return {
-            consumed: true,
-            flow_run_id: run.id,
-            outcome: 'handed_off',
-          };
-        }
         matched = result.kind === 'matched' ? result.nextNodeKey : null;
       } catch (err) {
         await logEvent(db, run.id, 'error', currentNode.node_key, {
           reason: 'dynamic_list_reply_failed',
-          detail: err instanceof Error ? err.message.slice(0, 300) : 'reply failed',
+          detail:
+            err instanceof Error ? err.message.slice(0, 300) : 'reply failed',
         });
         matched = null;
       }
@@ -2282,7 +2321,8 @@ async function handleReplyForActiveRun(
             userId: run.user_id,
             conversationId: run.conversation_id!,
             contactId: run.contact_id!,
-            text: cfg.invalid_input_message ??
+            text:
+              cfg.invalid_input_message ??
               (invalidDate
                 ? `${cfg.prompt_text} (Please use DD-MM-YYYY, for example 25-12-2026.)`
                 : 'Please enter a valid whole number.'),
@@ -2413,9 +2453,8 @@ async function handleReplyForActiveRun(
         if (listConfig.dynamic_source_var) {
           await sendDynamicListAndSuspend(db, run, currentNode);
         } else if (listConfig.dynamic_destinations) {
-          const scope = run.vars[
-            listConfig.destination_scope_var ?? 'destination_scope'
-          ];
+          const scope =
+            run.vars[listConfig.destination_scope_var ?? 'destination_scope'];
           if (scope === 'domestic' || scope === 'international') {
             const destinations = await fetchTravelDestinations(scope);
             await sendDestinationListAndSuspend(

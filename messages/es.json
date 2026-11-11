@@ -1331,7 +1331,14 @@
       "fixIssues": "Corrige los problemas de abajo antes de activar",
       "save": "Guardar",
       "descriptionPlaceholder": "Agrega una breve descripción (interna; los clientes no la ven)",
-      "descriptionLabel": "Descripción del flujo"
+      "descriptionLabel": "Descripción del flujo",
+      "notificationSettings": "Notificaciones del flujo",
+      "notificationSettingsHelp": "Elige qué eventos notifican al equipo de Travel CRM para este flujo. Se avisa a los responsables del destino; si no hay destino o responsable, se avisa a los administradores y gerentes.",
+      "completionNotificationOption": "Cuando el cliente completa el flujo",
+      "inactivityNotificationOption": "Cuando el cliente deja el flujo sin completarlo",
+      "inactivityNotificationHelp": "Empieza después de elegir un destino; las respuestas en este flujo reinician el temporizador.",
+      "inactivityDelayLabel": "Notificar después de",
+      "minutesUnit": "minutos"
     }
   },
   "Settings": {

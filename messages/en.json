@@ -1331,7 +1331,14 @@
       "fixIssues": "Fix the issues below before activating",
       "save": "Save",
       "descriptionPlaceholder": "Add a short description (internal — customers don't see this)",
-      "descriptionLabel": "Flow description"
+      "descriptionLabel": "Flow description",
+      "notificationSettings": "Flow notifications",
+      "notificationSettingsHelp": "Choose which events notify the Travel CRM team for this flow. Selected destination assignees are notified; None or unassigned destinations go to admins and managers.",
+      "completionNotificationOption": "When the customer completes the flow",
+      "inactivityNotificationOption": "When the customer stops before completing",
+      "inactivityNotificationHelp": "Start after destination selection; replies in this flow reset the timer.",
+      "inactivityDelayLabel": "Notify after",
+      "minutesUnit": "minutes"
     }
   },
   "Settings": {

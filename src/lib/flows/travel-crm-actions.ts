@@ -4,6 +4,7 @@ import {
   type TravelDestination,
   type TravelDestinationScope,
 } from './travel-destinations';
+import { getFlowNotificationSettings } from './notification-settings';
 
 export interface TravelCrmDestination {
   destination_id: string;
@@ -27,6 +28,9 @@ export interface TravelCrmEnquiryPayload {
   completed_at: string;
   is_partial: boolean;
   handoff_requested: boolean;
+  notify_on_completion: boolean;
+  inactivity_after_minutes: number;
+  inactivity_notification: boolean;
   contact: {
     name: string | null;
     email: string | null;
@@ -49,77 +53,112 @@ export interface TravelCrmEnquiryResult {
   lead_id: string;
 }
 
+export function shouldNotifyCrmOnFlowCompletion(
+  triggerConfig: unknown
+): boolean {
+  return getFlowNotificationSettings(triggerConfig).on_completion;
+}
+
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function getTravelCrmDestinations(
-  scope: TravelDestinationScope,
+  scope: TravelDestinationScope
 ): Promise<TravelCrmDestination[]> {
   const results = await fetchTravelDestinations(scope);
   return results
     .filter((destination) => destination.assignment_status === 'assigned')
     .map((destination) => {
-      if (!UUID_PATTERN.test(destination.id) || !UUID_PATTERN.test(destination.assigned_employee_id)) {
-        throw new Error('Travel CRM returned an invalid destination assignment.');
+      if (
+        !UUID_PATTERN.test(destination.id) ||
+        !UUID_PATTERN.test(destination.assigned_employee_id)
+      ) {
+        throw new Error(
+          'Travel CRM returned an invalid destination assignment.'
+        );
       }
-    return {
-      destination_id: destination.id,
-      destination_name: destination.name,
-      travel_type: destination.scope,
-      assigned_employee_id: destination.assigned_employee_id,
-      assignment_status: destination.assignment_status,
-      delivery_method: destination.delivery_method,
-      itinerary_url: destination.itinerary_url,
-      pdf_url:
-        destination.delivery_method === 'pdf'
-          ? (destination.pdf?.url ?? null)
-          : null,
-      pdf_available:
-        destination.delivery_method === 'pdf' && destination.pdf !== null,
-    };
+      return {
+        destination_id: destination.id,
+        destination_name: destination.name,
+        travel_type: destination.scope,
+        assigned_employee_id: destination.assigned_employee_id,
+        assignment_status: destination.assignment_status,
+        delivery_method: destination.delivery_method,
+        itinerary_url: destination.itinerary_url,
+        pdf_url:
+          destination.delivery_method === 'pdf'
+            ? (destination.pdf?.url ?? null)
+            : null,
+        pdf_available:
+          destination.delivery_method === 'pdf' && destination.pdf !== null,
+      };
     });
 }
 
 export async function getTravelCrmDestination(
   scope: TravelDestinationScope,
-  destinationId: string,
+  destinationId: string
 ): Promise<TravelCrmDestination> {
   if (!UUID_PATTERN.test(destinationId)) {
     throw new Error('Destination ID is invalid.');
   }
   const destinations = await getTravelCrmDestinations(scope);
   const destination = destinations.find(
-    (item) => item.destination_id === destinationId,
+    (item) => item.destination_id === destinationId
   );
   if (!destination) {
-    throw new Error('Destination is inactive or has no valid employee assignment.');
+    throw new Error(
+      'Destination is inactive or has no valid employee assignment.'
+    );
   }
   return destination;
 }
 
 export async function completeTravelCrmEnquiry(
-  payload: TravelCrmEnquiryPayload,
+  payload: TravelCrmEnquiryPayload
 ): Promise<TravelCrmEnquiryResult> {
   const endpoint = process.env.TRAVEL_CRM_FLOW_SYNC_URL;
   const response = await signedTravelCrmPost(endpoint, payload, 10_000);
   if (!response.ok) {
-    throw new Error(`Travel CRM enquiry completion returned HTTP ${response.status}.`);
+    throw new Error(
+      `Travel CRM enquiry completion returned HTTP ${response.status}.`
+    );
   }
 
   let result: unknown;
   try {
     result = await response.json();
   } catch {
-    throw new Error('Travel CRM returned an invalid enquiry completion response.');
+    throw new Error(
+      'Travel CRM returned an invalid enquiry completion response.'
+    );
   }
   if (!isTravelCrmEnquiryResult(result)) {
-    throw new Error('Travel CRM returned an incomplete enquiry completion response.');
+    throw new Error(
+      'Travel CRM returned an incomplete enquiry completion response.'
+    );
   }
   return result;
 }
 
+export async function notifyTravelCrmFlowInactivity(
+  payload: TravelCrmEnquiryPayload
+): Promise<void> {
+  const endpoint = process.env.TRAVEL_CRM_FLOW_SYNC_URL;
+  const response = await signedTravelCrmPost(
+    endpoint,
+    { ...payload, is_partial: true, inactivity_notification: true },
+    10_000
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Travel CRM inactivity notification returned HTTP ${response.status}.`
+    );
+  }
+}
+
 function isTravelCrmEnquiryResult(
-  value: unknown,
+  value: unknown
 ): value is TravelCrmEnquiryResult {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const result = value as Record<string, unknown>;
@@ -138,16 +177,19 @@ function isTravelCrmEnquiryResult(
 async function signedTravelCrmPost(
   endpointValue: string | undefined,
   payload: unknown,
-  timeoutMs: number,
+  timeoutMs: number
 ): Promise<Response> {
   const secret = process.env.WACRM_BRIDGE_SECRET;
   if (!endpointValue || !secret || Buffer.byteLength(secret) < 32) {
     throw new Error('Travel CRM integration is not configured.');
   }
   const endpoint = new URL(endpointValue);
-  const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+  const isLocal = ['localhost', '127.0.0.1', '[::1]'].includes(
+    endpoint.hostname
+  );
   if (
-    (endpoint.protocol !== 'https:' && !(endpoint.protocol === 'http:' && isLocal)) ||
+    (endpoint.protocol !== 'https:' &&
+      !(endpoint.protocol === 'http:' && isLocal)) ||
     endpoint.username ||
     endpoint.password
   ) {

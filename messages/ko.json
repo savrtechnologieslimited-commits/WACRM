@@ -1331,7 +1331,14 @@
       "fixIssues": "활성화하기 전에 아래 문제를 해결하세요",
       "save": "저장",
       "descriptionPlaceholder": "짧은 설명을 추가하세요 (내부용 — 고객에게는 보이지 않습니다)",
-      "descriptionLabel": "플로우 설명"
+      "descriptionLabel": "플로우 설명",
+      "notificationSettings": "플로우 알림",
+      "notificationSettingsHelp": "이 플로우에서 Travel CRM 팀에 알릴 이벤트를 선택하세요. 목적지 담당자에게 알리며, 목적지가 없거나 담당자가 없으면 관리자와 매니저에게 알립니다.",
+      "completionNotificationOption": "고객이 플로우를 완료할 때",
+      "inactivityNotificationOption": "고객이 플로우를 완료하지 않고 중단할 때",
+      "inactivityNotificationHelp": "목적지를 선택한 뒤 시작되며, 이 플로우의 답장은 타이머를 다시 시작합니다.",
+      "inactivityDelayLabel": "알림 시간",
+      "minutesUnit": "분"
     }
   },
   "Settings": {
