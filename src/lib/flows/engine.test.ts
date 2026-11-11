@@ -1870,11 +1870,12 @@ describe('visual Travel CRM actions in the flow engine', () => {
     );
   });
 
-  it('saves a None-destination enquiry with blank destination fields and other answers intact', async () => {
+  it('saves a None-destination enquiry with the requested place and other answers intact', async () => {
     setCompletionFlow();
     const run = h.state.activeRuns[0] as unknown as FlowRunRow;
     run.vars = {
       ...run.vars,
+      destination_name: ' Kyoto ',
       selected_destination_id: null,
       selected_destination_name: null,
       selected_destination: null,
@@ -1926,7 +1927,7 @@ describe('visual Travel CRM actions in the flow engine', () => {
       travel_date: '2026-12-25',
       budget: '50000',
       destination_id: null,
-      destination_name: null,
+      destination_name: 'Kyoto',
       assigned_employee_id: null,
     });
     expect(payload.answers).not.toHaveProperty('selected_destination');

@@ -1480,6 +1480,10 @@ async function buildTravelCrmEnquiryPayload(
       : getVerifiedDestination(run.vars);
   const answers = safeFlowAnswers(run.vars, variableMap);
   if (run.vars.__travel_crm_destination_none === true) {
+    const requestedDestination =
+      typeof run.vars.destination_name === 'string'
+        ? run.vars.destination_name.trim().slice(0, 200) || null
+        : null;
     for (const key of [
       'destination_id',
       'destination_name',
@@ -1492,7 +1496,7 @@ async function buildTravelCrmEnquiryPayload(
       delete answers[key];
     }
     answers.destination_id = null;
-    answers.destination_name = null;
+    answers.destination_name = requestedDestination;
     answers.assigned_employee_id = null;
     for (const key of ['destination_id', 'destination_name', 'assigned_employee_id']) {
       const answerKey = variableMap[key];
