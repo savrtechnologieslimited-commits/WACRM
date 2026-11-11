@@ -2,27 +2,14 @@ import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { resolveFallbackPolicy } from '@/lib/flows/fallback';
-import { buildTravelCrmEnquiryPayload } from '@/lib/flows/engine';
-import {
-  notifyTravelCrmFlowInactivity,
-  type TravelCrmEnquiryPayload,
-} from '@/lib/flows/travel-crm-actions';
-import { getFlowNotificationSettings } from '@/lib/flows/notification-settings';
-import {
-  DESTINATION_INACTIVITY_NOTIFIED_AT_VAR,
-  DESTINATION_SELECTED_AT_VAR,
-  shouldNotifyDestinationInactivity,
-} from '@/lib/flows/destination-inactivity';
 import type { FlowRunRow } from '@/lib/flows/types';
 
 /**
- * Sweep abandoned active flow runs and alert the CRM when a customer
- * has not replied for the configured interval after selecting a destination.
+ * Sweep abandoned active flow runs and mark them timed out.
  *
  * Reads each active run's parent-flow `fallback_policy.on_timeout_hours`
  * to compute the staleness cutoff (default 24h), then marks any run
- * past its cutoff as `timed_out`. It also checks for destination
- * inactivity notifications and writes flow-run events for timeout
+ * past its cutoff as `timed_out` and writes flow-run events for timeout
  * audit trails.
  *
  * Without this sweep, a customer who abandons a flow mid-conversation
@@ -36,39 +23,8 @@ import type { FlowRunRow } from '@/lib/flows/types';
  * URLs so one failing doesn't block the other.
  *
  * Hosting: hit on a schedule (Vercel Cron / GitHub Actions / external
- * pinger). Run at least every five minutes for inactivity notifications
- * to arrive close to their configured threshold.
+ * pinger).
  */
-function getFlowSelectedDestination(
-  vars: Record<string, unknown>
-): TravelCrmEnquiryPayload['destination'] {
-  if (vars.__travel_crm_destination_none === true) return null;
-  const selection = vars.destination_selection;
-  if (!selection || typeof selection !== 'object' || Array.isArray(selection))
-    return null;
-  const value = selection as Record<string, unknown>;
-  if (
-    typeof value.id !== 'string' ||
-    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-      value.id
-    ) ||
-    typeof value.name !== 'string' ||
-    (value.scope !== 'domestic' && value.scope !== 'international') ||
-    (value.assignment_status !== 'assigned' &&
-      value.assignment_status !== 'unassigned' &&
-      value.assignment_status !== 'ambiguous')
-  ) {
-    return null;
-  }
-  return {
-    id: value.id,
-    name: value.name,
-    scope: value.scope,
-    assignment_status: value.assignment_status,
-    assigned_employee_id: null,
-  };
-}
-
 export async function GET(request: Request) {
   const expected = process.env.AUTOMATION_CRON_SECRET;
   if (!expected) {
@@ -97,7 +53,7 @@ export async function GET(request: Request) {
   const { data: runs, error } = await admin
     .from('flow_runs')
     .select(
-      'id, flow_id, account_id, user_id, contact_id, conversation_id, status, current_node_key, last_prompt_message_id, vars, reprompt_count, started_at, last_advanced_at, ended_at, end_reason, flows ( fallback_policy, trigger_config )'
+      'id, flow_id, account_id, user_id, contact_id, conversation_id, status, current_node_key, last_prompt_message_id, vars, reprompt_count, started_at, last_advanced_at, ended_at, end_reason, flows ( fallback_policy )'
     )
     .eq('status', 'active');
 
@@ -106,112 +62,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (!runs?.length) {
-    return NextResponse.json({ swept: 0, inactivity_notified: 0, errors: 0 });
+    return NextResponse.json({ swept: 0 });
   }
 
   type Row = FlowRunRow & {
     flows:
-      | { fallback_policy: unknown; trigger_config: unknown }
-      | { fallback_policy: unknown; trigger_config: unknown }[]
+      | { fallback_policy: unknown }
+      | { fallback_policy: unknown }[]
       | null;
   };
 
   let swept = 0;
-  let inactivityNotified = 0;
-  let errors = 0;
   for (const r of runs as Row[]) {
     const flowsField = Array.isArray(r.flows) ? r.flows[0] : r.flows;
     const policy = resolveFallbackPolicy(flowsField?.fallback_policy ?? null);
-    const notificationSettings = getFlowNotificationSettings(
-      flowsField?.trigger_config
-    );
-
-    const selectionValue = r.vars[DESTINATION_SELECTED_AT_VAR];
-    if (
-      typeof selectionValue === 'string' &&
-      shouldNotifyDestinationInactivity({
-        status: r.status,
-        vars: r.vars,
-        notifyEnabled: notificationSettings.inactivity_enabled,
-        lastFlowReplyAt: null,
-        inactivityMinutes: notificationSettings.inactivity_minutes,
-        nowMilliseconds: now.getTime(),
-      })
-    ) {
-      const { data: flowReply, error: replyError } = await admin
-        .from('flow_run_events')
-        .select('created_at')
-        .eq('flow_run_id', r.id)
-        .eq('event_type', 'reply_received')
-        .gt('created_at', selectionValue)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (replyError) {
-        console.error('[flows-cron] flow-reply check failed:', {
-          runId: r.id,
-          message: replyError.message,
-        });
-        errors += 1;
-        continue;
-      }
-
-      if (
-        shouldNotifyDestinationInactivity({
-          status: r.status,
-          vars: r.vars,
-          notifyEnabled: notificationSettings.inactivity_enabled,
-          lastFlowReplyAt: flowReply?.created_at ?? null,
-          inactivityMinutes: notificationSettings.inactivity_minutes,
-          nowMilliseconds: now.getTime(),
-        })
-      ) {
-        try {
-          const payload = await buildTravelCrmEnquiryPayload(
-            admin,
-            r,
-            {},
-            true,
-            false
-          );
-          payload.destination ??= getFlowSelectedDestination(r.vars);
-          payload.inactivity_after_minutes =
-            notificationSettings.inactivity_minutes;
-          await notifyTravelCrmFlowInactivity(payload);
-          const { error: markError } = await admin
-            .from('flow_runs')
-            .update({
-              vars: {
-                ...r.vars,
-                [DESTINATION_INACTIVITY_NOTIFIED_AT_VAR]: now.toISOString(),
-              },
-            })
-            .eq('id', r.id)
-            .eq('status', 'active');
-          if (markError) {
-            console.error(
-              '[flows-cron] inactivity notification marker failed:',
-              {
-                runId: r.id,
-                message: markError.message,
-              }
-            );
-            errors += 1;
-          } else {
-            inactivityNotified += 1;
-          }
-        } catch (notificationError) {
-          console.error('[flows-cron] inactivity notification failed:', {
-            runId: r.id,
-            message:
-              notificationError instanceof Error
-                ? notificationError.message
-                : 'Unknown notification error',
-          });
-          errors += 1;
-        }
-      }
-    }
 
     const lastAdvanced = new Date(r.last_advanced_at);
     const ageHours =
@@ -245,8 +109,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json(
-    { swept, inactivity_notified: inactivityNotified, errors },
-    { status: errors > 0 ? 500 : 200 }
-  );
+  return NextResponse.json({ swept });
 }

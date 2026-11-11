@@ -56,7 +56,6 @@ import {
   type TravelCrmDestination,
   type TravelCrmEnquiryPayload,
 } from './travel-crm-actions';
-import { DESTINATION_SELECTED_AT_VAR } from './destination-inactivity';
 import { getFlowNotificationSettings } from './notification-settings';
 import {
   type CollectInputNodeConfig,
@@ -826,7 +825,6 @@ async function handleDynamicListReply(
       [pageKey]: 0,
       __travel_crm_destination: null,
       __travel_crm_destination_none: true,
-      [DESTINATION_SELECTED_AT_VAR]: new Date().toISOString(),
     };
     if (!(await persistRunVars(db, run, vars, node.node_key))) {
       return { kind: 'unmatched' };
@@ -865,7 +863,6 @@ async function handleDynamicListReply(
       trustedDestination?.assigned_employee_id ??
       (typeof assignedEmployeeId === 'string' ? assignedEmployeeId : null),
     [pageKey]: 0,
-    [DESTINATION_SELECTED_AT_VAR]: new Date().toISOString(),
     ...(trustedDestination
       ? { __travel_crm_destination: trustedDestination }
       : {}),
@@ -981,7 +978,6 @@ async function handleDestinationReply(
     destination_itinerary_url: selected.itinerary_url,
     destination_assignment_status: selected.assignment_status,
     destination_readiness: selected.assignment_status,
-    [DESTINATION_SELECTED_AT_VAR]: new Date().toISOString(),
     destination_selection: {
       id: selected.id,
       name: selected.name,
@@ -1491,7 +1487,6 @@ export async function buildTravelCrmEnquiryPayload(
       ? null
       : getVerifiedDestination(run.vars);
   const triggerConfig = flow.trigger_config as Record<string, unknown> | null;
-  const notificationSettings = getFlowNotificationSettings(triggerConfig);
   const answers = safeFlowAnswers(run.vars, variableMap);
   if (run.vars.__travel_crm_destination_none === true) {
     const requestedDestination =
@@ -1543,8 +1538,6 @@ export async function buildTravelCrmEnquiryPayload(
     is_partial: isPartial,
     handoff_requested: handoffRequested,
     notify_on_completion: shouldNotifyCrmOnFlowCompletion(triggerConfig),
-    inactivity_after_minutes: notificationSettings.inactivity_minutes,
-    inactivity_notification: false,
     destination_selected_notification: false,
     contact: {
       name: name?.slice(0, 200) ?? null,

@@ -1336,11 +1336,7 @@
       "notificationSettingsHelp": "Elige qué eventos notifican al equipo de Travel CRM para este flujo. Se avisa a los responsables del destino; si no hay destino o responsable, se avisa a los administradores y gerentes.",
       "completionNotificationOption": "Cuando el cliente completa el flujo",
       "destinationSelectedNotificationOption": "Cuando el cliente selecciona un destino",
-      "destinationSelectedNotificationHelp": "Notifica de inmediato que alguien mostró interés en este destino por WhatsApp.",
-      "inactivityNotificationOption": "Cuando el cliente deja el flujo sin completarlo",
-      "inactivityNotificationHelp": "Empieza después de elegir un destino; las respuestas en este flujo reinician el temporizador.",
-      "inactivityDelayLabel": "Notificar después de",
-      "minutesUnit": "minutos"
+      "destinationSelectedNotificationHelp": "Notifica de inmediato que alguien mostró interés en este destino por WhatsApp."
     }
   },
   "Settings": {

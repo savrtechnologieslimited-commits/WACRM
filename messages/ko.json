@@ -1336,11 +1336,7 @@
       "notificationSettingsHelp": "이 플로우에서 Travel CRM 팀에 알릴 이벤트를 선택하세요. 목적지 담당자에게 알리며, 목적지가 없거나 담당자가 없으면 관리자와 매니저에게 알립니다.",
       "completionNotificationOption": "고객이 플로우를 완료할 때",
       "destinationSelectedNotificationOption": "고객이 목적지를 선택할 때",
-      "destinationSelectedNotificationHelp": "누군가 WhatsApp으로 이 목적지에 관심을 보였다는 알림을 즉시 보냅니다.",
-      "inactivityNotificationOption": "고객이 플로우를 완료하지 않고 중단할 때",
-      "inactivityNotificationHelp": "목적지를 선택한 뒤 시작되며, 이 플로우의 답장은 타이머를 다시 시작합니다.",
-      "inactivityDelayLabel": "알림 시간",
-      "minutesUnit": "분"
+      "destinationSelectedNotificationHelp": "누군가 WhatsApp으로 이 목적지에 관심을 보였다는 알림을 즉시 보냅니다."
     }
   },
   "Settings": {

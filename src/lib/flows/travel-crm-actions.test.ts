@@ -5,7 +5,6 @@ import {
   getTravelCrmDestination,
   getTravelCrmDestinations,
   notifyTravelCrmDestinationSelected,
-  notifyTravelCrmFlowInactivity,
   shouldNotifyCrmOnFlowCompletion,
   type TravelCrmEnquiryPayload,
 } from './travel-crm-actions';
@@ -148,8 +147,6 @@ describe('Travel CRM enquiry completion callback', () => {
       is_partial: false,
       handoff_requested: false,
       notify_on_completion: true,
-      inactivity_after_minutes: 20,
-      inactivity_notification: false,
       destination_selected_notification: false,
       contact: {
         name: 'Sam',
@@ -203,8 +200,6 @@ describe('Travel CRM enquiry completion callback', () => {
       is_partial: false,
       handoff_requested: false,
       notify_on_completion: false,
-      inactivity_after_minutes: 20,
-      inactivity_notification: false,
       destination_selected_notification: false,
       contact: { name: 'Sam', email: null, phone: '+919876543210' },
       destination: null,
@@ -214,48 +209,6 @@ describe('Travel CRM enquiry completion callback', () => {
     await expect(completeTravelCrmEnquiry(payload)).rejects.toThrow(
       'incomplete enquiry completion response'
     );
-  });
-
-  it('sends an inactivity callback without requiring an enquiry response body', async () => {
-    vi.stubEnv(
-      'TRAVEL_CRM_FLOW_SYNC_URL',
-      'https://travel.example/api/wacrm/flow-completed'
-    );
-    vi.stubEnv('WACRM_BRIDGE_SECRET', SECRET);
-    const request = vi.fn(
-      async (_input: RequestInfo | URL, _init?: RequestInit) =>
-        new Response(null, { status: 200 })
-    );
-    vi.stubGlobal('fetch', request);
-    const payload: TravelCrmEnquiryPayload = {
-      version: 1,
-      flow_run_id: '55555555-5555-4555-8555-555555555555',
-      flow_id: '66666666-6666-4666-8666-666666666666',
-      wacrm_contact_id: '77777777-7777-4777-8777-777777777777',
-      wacrm_conversation_id: null,
-      flow_name: 'Travel Enquiry',
-      completed_at: '2026-01-01T00:00:00.000Z',
-      is_partial: true,
-      handoff_requested: false,
-      notify_on_completion: true,
-      inactivity_after_minutes: 45,
-      inactivity_notification: false,
-      destination_selected_notification: false,
-      contact: { name: 'Sam', email: null, phone: null },
-      destination: null,
-      answers: {},
-    };
-
-    await expect(
-      notifyTravelCrmFlowInactivity(payload)
-    ).resolves.toBeUndefined();
-    const [, init] = request.mock.calls[0];
-    if (!init) throw new Error('fetch init was not provided');
-    expect(JSON.parse(String(init.body))).toMatchObject({
-      is_partial: true,
-      inactivity_after_minutes: 45,
-      inactivity_notification: true,
-    });
   });
 
   it('sends a destination-selected callback without requiring an enquiry response body', async () => {
@@ -280,8 +233,6 @@ describe('Travel CRM enquiry completion callback', () => {
       is_partial: true,
       handoff_requested: false,
       notify_on_completion: true,
-      inactivity_after_minutes: 45,
-      inactivity_notification: false,
       destination_selected_notification: false,
       contact: { name: 'Sam', email: null, phone: null },
       destination: {
@@ -301,7 +252,6 @@ describe('Travel CRM enquiry completion callback', () => {
     if (!init) throw new Error('fetch init was not provided');
     expect(JSON.parse(String(init.body))).toMatchObject({
       is_partial: true,
-      inactivity_notification: false,
       destination_selected_notification: true,
     });
   });

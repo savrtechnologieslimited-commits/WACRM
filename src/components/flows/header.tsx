@@ -42,7 +42,6 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import {
   getFlowNotificationSettings,
-  normalizeFlowInactivityMinutes,
 } from '@/lib/flows/notification-settings';
 import { useFlowEditor, type BuilderState } from './flow-editor-state';
 
@@ -235,62 +234,6 @@ export function EditorHeader() {
             aria-label={t('destinationSelectedNotificationOption')}
           />
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 pl-6">
-          <div className="min-w-0">
-            <p className="text-foreground text-sm">
-              {t('inactivityNotificationOption')}
-            </p>
-            <p className="text-muted-foreground text-xs">
-              {t('inactivityNotificationHelp')}
-            </p>
-          </div>
-          <Switch
-            checked={notificationSettings.inactivity_enabled}
-            onCheckedChange={(checked) =>
-              setState((current) => ({
-                ...current,
-                trigger_config: {
-                  ...current.trigger_config,
-                  notification_settings: {
-                    ...getFlowNotificationSettings(current.trigger_config),
-                    inactivity_enabled: !!checked,
-                  },
-                },
-              }))
-            }
-            aria-label={t('inactivityNotificationOption')}
-          />
-        </div>
-        {notificationSettings.inactivity_enabled && (
-          <label className="text-muted-foreground flex flex-wrap items-center gap-2 pl-6 text-sm">
-            <span>{t('inactivityDelayLabel')}</span>
-            <input
-              type="number"
-              min={1}
-              max={10080}
-              step={1}
-              value={notificationSettings.inactivity_minutes}
-              onChange={(event) => {
-                const minutes = Number(event.target.value);
-                if (!Number.isFinite(minutes) || minutes < 1) return;
-                setState((current) => ({
-                  ...current,
-                  trigger_config: {
-                    ...current.trigger_config,
-                    notification_settings: {
-                      ...getFlowNotificationSettings(current.trigger_config),
-                      inactivity_minutes:
-                        normalizeFlowInactivityMinutes(minutes),
-                    },
-                  },
-                }));
-              }}
-              aria-label={t('inactivityDelayLabel')}
-              className="border-border bg-background text-foreground h-8 w-20 rounded-md border px-2 text-sm"
-            />
-            <span>{t('minutesUnit')}</span>
-          </label>
-        )}
       </div>
     </div>
   );
