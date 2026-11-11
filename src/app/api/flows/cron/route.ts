@@ -70,7 +70,8 @@ function getFlowSelectedDestination(
 }
 
 export async function GET(request: Request) {
-  const expected = process.env.AUTOMATION_CRON_SECRET;
+  const expected =
+    process.env.CRON_SECRET ?? process.env.AUTOMATION_CRON_SECRET;
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 });
   }
@@ -78,7 +79,12 @@ export async function GET(request: Request) {
   // can't recover the secret byte-by-byte from response-time deltas.
   // Length pre-check is required by timingSafeEqual (throws otherwise)
   // and leaks only the length itself, which isn't sensitive.
-  const supplied = request.headers.get('x-cron-secret') ?? '';
+  const authorization = request.headers.get('authorization') ?? '';
+  const supplied =
+    request.headers.get('x-cron-secret') ??
+    (authorization.startsWith('Bearer ')
+      ? authorization.slice('Bearer '.length)
+      : '');
   const suppliedBuf = Buffer.from(supplied);
   const expectedBuf = Buffer.from(expected);
   if (
