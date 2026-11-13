@@ -76,6 +76,8 @@ import {
   type SetTagNodeConfig,
   type StartNodeConfig,
   type KeywordTriggerConfig,
+  DEFAULT_REPEAT_AFTER_DAYS,
+  MAX_REPEAT_AFTER_DAYS,
 } from './types';
 
 // ============================================================
@@ -430,23 +432,75 @@ async function findEntryFlow(
     if (flow.trigger_type === 'keyword') {
       const cfg = flow.trigger_config as KeywordTriggerConfig;
       if (candidates.some((text) => matchesKeywordTrigger(text, cfg))) {
-        if (cfg.once_per_contact) {
-          const { data: priorRuns, error: priorRunsError } = await db
-            .from('flow_runs')
-            .select('id')
-            .eq('account_id', accountId)
-            .eq('flow_id', flow.id)
-            .eq('contact_id', contactId)
-            .in('status', ['completed', 'handed_off', 'paused_by_agent'])
-            .limit(1);
-          if (priorRunsError) {
+        const { data: priorRuns, error: priorRunsError } = await db
+          .from('flow_runs')
+          .select('started_at, ended_at')
+          .eq('account_id', accountId)
+          .eq('flow_id', flow.id)
+          .eq('contact_id', contactId)
+          .in('status', [
+            'completed',
+            'handed_off',
+            'timed_out',
+            'paused_by_agent',
+            'failed',
+          ])
+          .order('ended_at', { ascending: false, nullsFirst: false })
+          .limit(1);
+        if (priorRunsError) {
+          console.error(
+            '[flows] checking prior runs before restart failed:',
+            priorRunsError.message
+          );
+          return { kind: 'already_handled' };
+        }
+
+        const priorRun = priorRuns?.[0] as
+          | { started_at: string; ended_at: string | null }
+          | undefined;
+        if (priorRun) {
+          const repeatEnabled =
+            typeof cfg.allow_repeat === 'boolean'
+              ? cfg.allow_repeat
+              : cfg.allow_repeat === undefined
+                ? !cfg.once_per_contact
+                : false;
+          if (
+            cfg.allow_repeat !== undefined &&
+            typeof cfg.allow_repeat !== 'boolean'
+          ) {
             console.error(
-              '[flows] checking prior runs before restart failed:',
-              priorRunsError.message
+              `[flows] flow ${flow.id} has an invalid repeat setting`
             );
             return { kind: 'already_handled' };
           }
-          if (priorRuns?.length) return { kind: 'already_handled' };
+          if (!repeatEnabled) return { kind: 'already_handled' };
+
+          const repeatAfterDays =
+            cfg.repeat_after_days ?? DEFAULT_REPEAT_AFTER_DAYS;
+          if (
+            !Number.isInteger(repeatAfterDays) ||
+            repeatAfterDays < 1 ||
+            repeatAfterDays > MAX_REPEAT_AFTER_DAYS
+          ) {
+            console.error(
+              `[flows] flow ${flow.id} has an invalid repeat delay`
+            );
+            return { kind: 'already_handled' };
+          }
+          const lastRunAt = Date.parse(
+            priorRun.ended_at ?? priorRun.started_at
+          );
+          if (!Number.isFinite(lastRunAt)) {
+            console.error(
+              `[flows] prior run for flow ${flow.id} has no valid end or start time`
+            );
+            return { kind: 'already_handled' };
+          }
+          const cooldownMs = repeatAfterDays * 24 * 60 * 60 * 1000;
+          if (Date.now() - lastRunAt < cooldownMs) {
+            return { kind: 'already_handled' };
+          }
         }
         return { kind: 'start', flow };
       }

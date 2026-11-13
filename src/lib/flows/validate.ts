@@ -24,6 +24,7 @@
  */
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
+import { MAX_REPEAT_AFTER_DAYS } from "@/lib/flows/types";
 
 export interface ValidationIssue {
   severity: "error" | "warning";
@@ -169,6 +170,34 @@ function validateTrigger(
           scope: "trigger",
           field: "trigger_config.keywords",
           message: `${blanks} keyword${blanks === 1 ? " is" : "s are"} blank — they won't match anything.`,
+        });
+      }
+    }
+
+    const allowRepeat =
+      trigger_config.allow_repeat === undefined
+        ? trigger_config.once_per_contact !== true
+        : trigger_config.allow_repeat;
+    if (typeof allowRepeat !== "boolean") {
+      issues.push({
+        severity: "error",
+        scope: "trigger",
+        field: "trigger_config.allow_repeat",
+        message: "Repeat trigger setting must be enabled or disabled.",
+      });
+    } else if (allowRepeat && trigger_config.repeat_after_days !== undefined) {
+      const days = trigger_config.repeat_after_days;
+      if (
+        typeof days !== "number" ||
+        !Number.isInteger(days) ||
+        days < 1 ||
+        days > MAX_REPEAT_AFTER_DAYS
+      ) {
+        issues.push({
+          severity: "error",
+          scope: "trigger",
+          field: "trigger_config.repeat_after_days",
+          message: `Repeat delay must be a whole number between 1 and ${MAX_REPEAT_AFTER_DAYS} days.`,
         });
       }
     }

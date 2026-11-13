@@ -30,6 +30,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -62,6 +63,10 @@ import { NodeConfigForm } from './forms/node-config-form';
 import { NodeKeySelect } from './forms/fields';
 import { IssueLine } from './validation-panel';
 import { useFlowEditor, type BuilderState } from './flow-editor-state';
+import {
+  DEFAULT_REPEAT_AFTER_DAYS,
+  MAX_REPEAT_AFTER_DAYS,
+} from '@/lib/flows/types';
 
 // ============================================================
 // Local state shape — mirrors the DB but the configs are typed
@@ -272,6 +277,16 @@ function TriggerPanel({
   triggerIssues: ValidationIssue[];
   t: ReturnType<typeof useTranslations>;
 }) {
+  const config = state.trigger_config;
+  const repeatEnabled =
+    typeof config.allow_repeat === 'boolean'
+      ? config.allow_repeat
+      : config.once_per_contact !== true;
+  const repeatAfterDays =
+    typeof config.repeat_after_days === 'number'
+      ? config.repeat_after_days
+      : DEFAULT_REPEAT_AFTER_DAYS;
+
   return (
     <section className="border-border bg-card rounded-lg border p-4">
       <h2 className="text-foreground mb-3 text-sm font-semibold">{t('triggerTitle')}</h2>
@@ -287,7 +302,13 @@ function TriggerPanel({
                 ...s,
                 trigger_type: v as BuilderState['trigger_type'],
                 trigger_config:
-                  v === 'keyword' ? { keywords: [] } : v === 'manual' ? {} : {},
+                  v === 'keyword'
+                    ? {
+                        keywords: [],
+                        allow_repeat: true,
+                        repeat_after_days: DEFAULT_REPEAT_AFTER_DAYS,
+                      }
+                    : {},
               }))
             }
           >
@@ -329,6 +350,73 @@ function TriggerPanel({
           </div>
         )}
       </div>
+      {state.trigger_type === 'keyword' && (
+        <div className="border-border mt-4 flex flex-wrap items-start gap-3 border-t pt-4">
+          <Switch
+            id="flow-allow-repeat"
+            checked={repeatEnabled}
+            onCheckedChange={(checked) =>
+              setState((s) => ({
+                ...s,
+                trigger_config: {
+                  ...s.trigger_config,
+                  allow_repeat: checked,
+                  ...(checked &&
+                  typeof s.trigger_config.repeat_after_days !== 'number'
+                    ? { repeat_after_days: DEFAULT_REPEAT_AFTER_DAYS }
+                    : {}),
+                },
+              }))
+            }
+          />
+          <div className="min-w-0 flex-1">
+            <label
+              htmlFor="flow-allow-repeat"
+              className="text-foreground text-xs font-medium"
+            >
+              {t('repeatTriggerLabel')}
+            </label>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {t(
+                repeatEnabled
+                  ? 'repeatTriggerHelp'
+                  : 'repeatTriggerDisabledHelp',
+              )}
+            </p>
+            {repeatEnabled && (
+              <div className="mt-3 flex items-center gap-2">
+                <label
+                  htmlFor="flow-repeat-after-days"
+                  className="text-muted-foreground text-xs"
+                >
+                  {t('repeatAfterLabel')}
+                </label>
+                <Input
+                  id="flow-repeat-after-days"
+                  type="number"
+                  min={1}
+                  max={MAX_REPEAT_AFTER_DAYS}
+                  step={1}
+                  value={repeatAfterDays}
+                  onChange={(event) =>
+                    setState((s) => ({
+                      ...s,
+                      trigger_config: {
+                        ...s.trigger_config,
+                        repeat_after_days: Number(event.target.value),
+                      },
+                    }))
+                  }
+                  className="bg-muted w-24"
+                />
+                <span className="text-muted-foreground text-xs">
+                  {t('daysLabel')}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {triggerIssues.length > 0 && (
         <div className="mt-3 flex flex-col gap-1">
           {triggerIssues.map((i, ix) => (

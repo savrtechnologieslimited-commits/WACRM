@@ -263,12 +263,22 @@ export type FlowNodeType = FlowNodeConfig['node_type'];
 // Triggers (matches `flows.trigger_type` + `trigger_config`)
 // ============================================================
 
+export const DEFAULT_REPEAT_AFTER_DAYS = 30;
+export const MAX_REPEAT_AFTER_DAYS = 3650;
+
 export interface KeywordTriggerConfig {
   /** One or more keywords. Match is case-insensitive by default. */
   keywords: string[];
   match_type?: 'exact' | 'contains';
   case_sensitive?: boolean;
-  /** Do not start this flow again after it has completed or handed off for this contact. */
+  /** Allow a matching keyword to start this flow again after this wait. */
+  allow_repeat?: boolean;
+  /** Minimum whole days after the previous run ended before restarting. */
+  repeat_after_days?: number;
+  /**
+   * Legacy templates use this to prevent restarts unless `allow_repeat`
+   * is explicitly set.
+   */
   once_per_contact?: boolean;
 }
 

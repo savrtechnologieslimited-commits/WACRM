@@ -113,6 +113,47 @@ describe("validateFlowForActivation — happy path", () => {
   });
 });
 
+describe("validateFlowForActivation — repeat trigger settings", () => {
+  it("accepts a valid repeat delay", () => {
+    expect(
+      validateFlowForActivation(
+        {
+          ...validFlow,
+          trigger_config: {
+            keywords: ["hi"],
+            allow_repeat: true,
+            repeat_after_days: 30,
+          },
+        },
+        validNodes,
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([0, -1, 1.5, 3651, "30"])(
+    "rejects an invalid repeat delay: %s",
+    (days) => {
+      const issues = validateFlowForActivation(
+        {
+          ...validFlow,
+          trigger_config: {
+            keywords: ["hi"],
+            allow_repeat: true,
+            repeat_after_days: days,
+          },
+        },
+        validNodes,
+      );
+      expect(issues).toContainEqual(
+        expect.objectContaining({
+          field: "trigger_config.repeat_after_days",
+          severity: "error",
+        }),
+      );
+    },
+  );
+});
+
 describe("validateFlowForActivation — flow-level", () => {
   it("flags empty name", () => {
     expect(

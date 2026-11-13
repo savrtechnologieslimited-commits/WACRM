@@ -310,6 +310,168 @@ describe("dispatchInboundToFlows — entry triggers (#490)", () => {
     expect(startedRuns()).toHaveLength(0);
   });
 
+  it("restarts a keyword flow when the configured cooldown has elapsed", async () => {
+    h.state.flows = [
+      {
+        ...KEYWORD_FLOW,
+        trigger_config: {
+          keywords: ["hi"],
+          allow_repeat: true,
+          repeat_after_days: 30,
+        },
+      },
+    ];
+    h.state.activeRuns = [
+      {
+        id: "prior-run",
+        account_id: "acct-1",
+        flow_id: "flow-1",
+        contact_id: "ct-1",
+        status: "completed",
+        started_at: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+        ended_at: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "hi",
+      meta_message_id: "m3",
+    });
+
+    expect(result.consumed).toBe(true);
+    expect(result.flow_run_id).toBe("run-1");
+    expect(startedRuns()).toHaveLength(1);
+  });
+
+  it("uses the default 30-day cooldown for existing repeatable keyword flows", async () => {
+    h.state.flows = [
+      { ...KEYWORD_FLOW, trigger_config: { keywords: ["hi"] } },
+    ];
+    h.state.activeRuns = [
+      {
+        id: "prior-run",
+        account_id: "acct-1",
+        flow_id: "flow-1",
+        contact_id: "ct-1",
+        status: "completed",
+        started_at: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+        ended_at: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "hi",
+      meta_message_id: "m6",
+    });
+
+    expect(result.consumed).toBe(true);
+    expect(startedRuns()).toHaveLength(1);
+  });
+
+  it("does not restart before the configured cooldown has elapsed", async () => {
+    h.state.flows = [
+      {
+        ...KEYWORD_FLOW,
+        trigger_config: {
+          keywords: ["hi"],
+          allow_repeat: true,
+          repeat_after_days: 60,
+        },
+      },
+    ];
+    h.state.activeRuns = [
+      {
+        id: "prior-run",
+        account_id: "acct-1",
+        flow_id: "flow-1",
+        contact_id: "ct-1",
+        status: "handed_off",
+        started_at: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+        ended_at: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "hi",
+      meta_message_id: "m4",
+    });
+
+    expect(result).toMatchObject({
+      consumed: true,
+      outcome: "already_completed",
+    });
+    expect(startedRuns()).toHaveLength(0);
+  });
+
+  it("keeps a flow from restarting when repeats are disabled", async () => {
+    h.state.flows = [
+      {
+        ...KEYWORD_FLOW,
+        trigger_config: { keywords: ["hi"], allow_repeat: false },
+      },
+    ];
+    h.state.activeRuns = [
+      {
+        id: "prior-run",
+        account_id: "acct-1",
+        flow_id: "flow-1",
+        contact_id: "ct-1",
+        status: "completed",
+        started_at: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+        ended_at: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "hi",
+      meta_message_id: "m7",
+    });
+
+    expect(result).toMatchObject({
+      consumed: true,
+      outcome: "already_completed",
+    });
+    expect(startedRuns()).toHaveLength(0);
+  });
+
+  it("allows an enabled cooldown to override a legacy once-per-contact setting", async () => {
+    h.state.flows = [
+      {
+        ...KEYWORD_FLOW,
+        trigger_config: {
+          keywords: ["hi"],
+          once_per_contact: true,
+          allow_repeat: true,
+          repeat_after_days: 30,
+        },
+      },
+    ];
+    h.state.activeRuns = [
+      {
+        id: "prior-run",
+        account_id: "acct-1",
+        flow_id: "flow-1",
+        contact_id: "ct-1",
+        status: "completed",
+        started_at: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString(),
+        ended_at: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+
+    const result = await dispatch({
+      kind: "text",
+      text: "hi",
+      meta_message_id: "m5",
+    });
+
+    expect(result.consumed).toBe(true);
+    expect(startedRuns()).toHaveLength(1);
+  });
+
   it("leaves a non-matching tap for the automations dispatcher", async () => {
     h.state.flows = [KEYWORD_FLOW];
 
