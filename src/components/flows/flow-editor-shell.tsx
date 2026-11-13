@@ -95,7 +95,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
 
   return (
     <FlowEditorProvider initialFlow={initialFlow} initialNodes={initialNodes}>
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="flex min-h-[calc(100dvh-8rem)] flex-col">
         <EditorHeader />
 
         {/* ---- mode row: view toggle + node-type legend ----
@@ -140,7 +140,7 @@ export function FlowEditorShell({ initialFlow, initialNodes }: Props) {
         )}
 
         {/* ---- stage: the active view, owning its own overflow ---- */}
-        <div className="relative mx-6 min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
+        <div className="relative mx-6 min-h-[min(65vh,36rem)] flex-1 overflow-hidden rounded-xl border border-border bg-card-2">
           {effectiveView === "canvas" ? (
             <FlowCanvas />
           ) : (
