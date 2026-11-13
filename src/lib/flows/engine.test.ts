@@ -1140,6 +1140,68 @@ describe('send_buttons / send_list interpolate {{vars.*}} (#553)', () => {
   });
 });
 
+describe('handoff acknowledgement', () => {
+  beforeEach(() => {
+    h.state.activeRuns = [{ ...RUN, current_node_key: 'menu', vars: {} }];
+    h.state.flows = [FLOW];
+    h.state.nodes = [
+      {
+        id: 'menu-node',
+        flow_id: 'flow-1',
+        node_key: 'menu',
+        node_type: 'send_buttons',
+        config: {
+          text: 'How can we help?',
+          buttons: [
+            {
+              reply_id: 'agent',
+              title: 'Speak to Agent',
+              next_node_key: 'agent_handoff',
+            },
+          ],
+        },
+      },
+      {
+        id: 'handoff-node',
+        flow_id: 'flow-1',
+        node_key: 'agent_handoff',
+        node_type: 'handoff',
+        config: {},
+      },
+    ];
+    h.state.events = [];
+    h.state.updates = [];
+    h.sendText.mockClear();
+  });
+
+  it('confirms the customer will be contacted when a flow hands off to an agent', async () => {
+    const result = await dispatch({
+      kind: 'interactive_reply',
+      reply_id: 'agent',
+      reply_title: 'Speak to Agent',
+      meta_message_id: 'agent-handoff',
+    });
+
+    expect(h.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'cv-1',
+        contactId: 'ct-1',
+        text: 'Thanks for reaching out! A member of our team will get back to you shortly.',
+      })
+    );
+    expect(h.state.events).toContainEqual(
+      expect.objectContaining({
+        event_type: 'message_sent',
+        node_key: 'agent_handoff',
+        payload: expect.objectContaining({
+          node_type: 'handoff_acknowledgement',
+        }),
+      })
+    );
+    expect(result).toMatchObject({ consumed: true, outcome: 'handed_off' });
+  });
+});
+
 describe('visual Travel CRM actions in the flow engine', () => {
   beforeEach(() => {
     h.state.activeRuns = [

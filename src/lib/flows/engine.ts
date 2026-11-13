@@ -1210,6 +1210,29 @@ async function executeHandoff(
       });
     }
   }
+  if (run.conversation_id && run.contact_id) {
+    try {
+      const { whatsapp_message_id } = await engineSendText({
+        accountId: run.account_id,
+        userId: run.user_id,
+        conversationId: run.conversation_id,
+        contactId: run.contact_id,
+        text: 'Thanks for reaching out! A member of our team will get back to you shortly.',
+      });
+      await logEvent(db, run.id, 'message_sent', node.node_key, {
+        node_type: 'handoff_acknowledgement',
+        whatsapp_message_id,
+      });
+    } catch (err) {
+      await logEvent(db, run.id, 'error', node.node_key, {
+        reason: 'handoff_acknowledgement_failed',
+        detail:
+          err instanceof Error
+            ? err.message.slice(0, 300)
+            : 'message send failed',
+      });
+    }
+  }
   const convUpdate: Record<string, unknown> = {
     status: 'pending',
     updated_at: new Date().toISOString(),
