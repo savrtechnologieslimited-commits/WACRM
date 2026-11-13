@@ -8,6 +8,7 @@ import {
   verifyWacrmBridgeToken,
 } from '@/lib/auth/bridge-token';
 import { createBridgeCompleteResponse } from '@/lib/auth/bridge-complete-response';
+import { resolveBridgeDestination } from '@/lib/auth/bridge-destination';
 import { consumeBridgeNonce } from '@/lib/auth/consume-bridge-nonce';
 
 export const dynamic = 'force-dynamic';
@@ -41,6 +42,14 @@ export async function POST(request: NextRequest) {
   const token = formData.get('token');
   if (typeof token !== 'string' || !token) {
     return bridgeError('The CRM sign-in token is missing.', 400);
+  }
+
+  const destination = resolveBridgeDestination(
+    formData.get('next'),
+    request.url
+  );
+  if (!destination) {
+    return bridgeError('The CRM sign-in destination is invalid.', 400);
   }
 
   let claims;
@@ -133,7 +142,7 @@ export async function POST(request: NextRequest) {
   }
 
   const completionResponse = createBridgeCompleteResponse(
-    new URL('/dashboard', request.url),
+    destination,
     claims.issuer
   );
   const supabase = await createClient(completionResponse);
