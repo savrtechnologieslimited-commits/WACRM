@@ -101,6 +101,26 @@ export async function POST(request: NextRequest) {
     return bridgeError('This CRM sign-in link has already been used.', 401);
   }
 
+  const completionResponse = createBridgeCompleteResponse(
+    destination,
+    claims.issuer
+  );
+  const supabase = await createClient(completionResponse);
+  const {
+    data: { user: activeWacrmUser },
+    error: currentSessionError,
+  } = await supabase.auth.getUser();
+  if (currentSessionError) {
+    console.error(
+      '[POST /auth/bridge] failed to verify the current WACRM session:',
+      currentSessionError
+    );
+    return bridgeError('WACRM could not verify the current account.', 500);
+  }
+  if (activeWacrmUser) {
+    return completionResponse;
+  }
+
   const { data: existingProfile, error: profileError } = await admin
     .from('profiles')
     .select('user_id')
@@ -141,11 +161,6 @@ export async function POST(request: NextRequest) {
     return bridgeError('WACRM could not create a sign-in session.', 500);
   }
 
-  const completionResponse = createBridgeCompleteResponse(
-    destination,
-    claims.issuer
-  );
-  const supabase = await createClient(completionResponse);
   const { error: sessionError } = await supabase.auth.verifyOtp({
     token_hash: tokenHash,
     type: 'magiclink',
