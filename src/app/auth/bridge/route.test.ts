@@ -75,6 +75,7 @@ function createSupabaseClient(getUserResult: unknown) {
     auth: {
       getUser: vi.fn().mockResolvedValue(getUserResult),
       verifyOtp: vi.fn().mockResolvedValue({ error: null }),
+      signOut: vi.fn().mockResolvedValue({ error: null }),
     },
   };
 }
@@ -92,7 +93,7 @@ beforeEach(() => {
 });
 
 describe('POST /auth/bridge', () => {
-  it('continues sign-in when the browser has no existing WACRM session', async () => {
+  it('sends a CRM user without a WACRM profile to the sign-in page', async () => {
     const client = createSupabaseClient({
       data: { user: null },
       error: Object.assign(new Error('Auth session missing!'), {
@@ -100,6 +101,29 @@ describe('POST /auth/bridge', () => {
       }),
     });
     mocks.createClient.mockResolvedValue(client);
+
+    const response = await POST(createBridgeRequest());
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(
+      'https://wacrm.example.test/login?next=%2Finbox'
+    );
+    expect(mocks.generateLink).not.toHaveBeenCalled();
+    expect(client.auth.verifyOtp).not.toHaveBeenCalled();
+  });
+
+  it('continues sign-in for an existing WACRM profile without a session', async () => {
+    const client = createSupabaseClient({
+      data: { user: null },
+      error: Object.assign(new Error('Auth session missing!'), {
+        name: 'AuthSessionMissingError',
+      }),
+    });
+    mocks.createClient.mockResolvedValue(client);
+    mocks.maybeSingle.mockResolvedValue({
+      data: { user_id: 'existing-wacrm-user' },
+      error: null,
+    });
 
     const response = await POST(createBridgeRequest());
     const body = await response.text();
@@ -111,6 +135,29 @@ describe('POST /auth/bridge', () => {
       token_hash: 'magic-link-hash',
       type: 'magiclink',
     });
+  });
+
+  it('clears a different WACRM session and requires sign-in', async () => {
+    const activeClient = createSupabaseClient({
+      data: { user: { email: 'another-user@example.test' } },
+      error: null,
+    });
+    const signOutClient = createSupabaseClient({
+      data: { user: null },
+      error: null,
+    });
+    mocks.createClient
+      .mockResolvedValueOnce(activeClient)
+      .mockResolvedValueOnce(signOutClient);
+
+    const response = await POST(createBridgeRequest());
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get('location')).toBe(
+      'https://wacrm.example.test/login?next=%2Finbox'
+    );
+    expect(signOutClient.auth.signOut).toHaveBeenCalledOnce();
+    expect(mocks.generateLink).not.toHaveBeenCalled();
   });
 
   it('returns a server error for unexpected session verification failures', async () => {

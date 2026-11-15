@@ -20,6 +20,18 @@ function bridgeError(message: string, status: number) {
   );
 }
 
+function redirectToSignIn(request: NextRequest, destination: URL) {
+  const signInUrl = new URL('/login', request.url);
+  signInUrl.searchParams.set(
+    'next',
+    `${destination.pathname}${destination.search}`
+  );
+  return NextResponse.redirect(signInUrl, {
+    status: 303,
+    headers: { 'Cache-Control': 'no-store' },
+  });
+}
+
 export async function POST(request: NextRequest) {
   const contentLength = request.headers.get('content-length');
   if (
@@ -121,7 +133,21 @@ export async function POST(request: NextRequest) {
     return bridgeError('WACRM could not verify the current account.', 500);
   }
   if (activeWacrmUser) {
-    return completionResponse;
+    if (activeWacrmUser.email?.toLowerCase() === claims.email.toLowerCase()) {
+      return completionResponse;
+    }
+
+    const signInResponse = redirectToSignIn(request, destination);
+    const signedOutClient = await createClient(signInResponse);
+    const { error: signOutError } = await signedOutClient.auth.signOut();
+    if (signOutError) {
+      console.error(
+        '[POST /auth/bridge] failed to clear the mismatched WACRM session:',
+        signOutError
+      );
+      return bridgeError('WACRM could not switch to the requested account.', 500);
+    }
+    return signInResponse;
   }
 
   const { data: existingProfile, error: profileError } = await admin
@@ -136,14 +162,14 @@ export async function POST(request: NextRequest) {
     );
     return bridgeError('WACRM could not complete sign-in.', 500);
   }
+  if (!existingProfile) {
+    return redirectToSignIn(request, destination);
+  }
 
   const { data: linkData, error: linkError } =
     await admin.auth.admin.generateLink({
       type: 'magiclink',
       email: claims.email,
-      ...(existingProfile
-        ? {}
-        : { options: { data: { full_name: claims.fullName } } }),
     });
   if (linkError) {
     console.error(
