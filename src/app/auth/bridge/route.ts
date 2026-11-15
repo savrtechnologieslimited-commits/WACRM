@@ -110,7 +110,10 @@ export async function POST(request: NextRequest) {
     data: { user: activeWacrmUser },
     error: currentSessionError,
   } = await supabase.auth.getUser();
-  if (currentSessionError) {
+  if (
+    currentSessionError &&
+    currentSessionError.name !== 'AuthSessionMissingError'
+  ) {
     console.error(
       '[POST /auth/bridge] failed to verify the current WACRM session:',
       currentSessionError
