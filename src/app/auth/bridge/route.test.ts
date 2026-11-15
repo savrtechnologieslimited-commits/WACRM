@@ -1,4 +1,5 @@
 import { createHmac } from 'node:crypto';
+import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -59,7 +60,7 @@ function createBridgeRequest() {
     token: createBridgeToken(),
     next: '/inbox',
   });
-  return new Request('https://wacrm.example.test/auth/bridge', {
+  return new NextRequest('https://wacrm.example.test/auth/bridge', {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
