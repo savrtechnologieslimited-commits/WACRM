@@ -137,26 +137,19 @@ describe('POST /auth/bridge', () => {
     });
   });
 
-  it('clears a different WACRM session and requires sign-in', async () => {
+  it('preserves an existing WACRM session when its email differs from CRM', async () => {
     const activeClient = createSupabaseClient({
       data: { user: { email: 'another-user@example.test' } },
       error: null,
     });
-    const signOutClient = createSupabaseClient({
-      data: { user: null },
-      error: null,
-    });
-    mocks.createClient
-      .mockResolvedValueOnce(activeClient)
-      .mockResolvedValueOnce(signOutClient);
+    mocks.createClient.mockResolvedValue(activeClient);
 
     const response = await POST(createBridgeRequest());
+    const body = await response.text();
 
-    expect(response.status).toBe(303);
-    expect(response.headers.get('location')).toBe(
-      'https://wacrm.example.test/login?next=%2Finbox'
-    );
-    expect(signOutClient.auth.signOut).toHaveBeenCalledOnce();
+    expect(response.status).toBe(200);
+    expect(body).toContain('Secure sign-in complete. Opening WhatsApp CRM');
+    expect(activeClient.auth.signOut).not.toHaveBeenCalled();
     expect(mocks.generateLink).not.toHaveBeenCalled();
   });
 

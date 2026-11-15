@@ -133,21 +133,7 @@ export async function POST(request: NextRequest) {
     return bridgeError('WACRM could not verify the current account.', 500);
   }
   if (activeWacrmUser) {
-    if (activeWacrmUser.email?.toLowerCase() === claims.email.toLowerCase()) {
-      return completionResponse;
-    }
-
-    const signInResponse = redirectToSignIn(request, destination);
-    const signedOutClient = await createClient(signInResponse);
-    const { error: signOutError } = await signedOutClient.auth.signOut();
-    if (signOutError) {
-      console.error(
-        '[POST /auth/bridge] failed to clear the mismatched WACRM session:',
-        signOutError
-      );
-      return bridgeError('WACRM could not switch to the requested account.', 500);
-    }
-    return signInResponse;
+    return completionResponse;
   }
 
   const { data: existingProfile, error: profileError } = await admin
