@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -33,6 +33,12 @@ export default function LoginPage() {
 
 function LoginPageInner() {
   const searchParams = useSearchParams();
+  useEffect(() => {
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'wacrm:dashboard-ready' }, '*');
+    }
+  }, []);
+
   // Forwarded from `/join/<token>` when the visitor already has an
   // account. After a successful sign-in we send them to the join
   // page to accept rather than to /dashboard.
